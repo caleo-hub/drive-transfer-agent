@@ -2,6 +2,66 @@ import { test, expect } from '@playwright/test';
 import os from 'node:os';
 import path from 'node:path';
 
+test('transfer plan: shows exact paths, separates preflight and approval, rejects stale plan', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(60000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.route('https://fonts.googleapis.com/**', (route) => route.abort());
+  await page.setViewportSize({ width: 390, height: 844 });
+  const chat = await (
+    await request.post('/api/conversations', { headers: { 'x-dta-request': '1' } })
+  ).json();
+  const plan = {
+    id: 'test-plan',
+    status: 'ready',
+    requires_approval: true,
+    approved: false,
+    stale: false,
+    destination: {
+      id: 'test-dest',
+      name: 'ANEST REVIEW 2026',
+      kind: 'mega',
+      path: 'ANEST REVIEW 2026',
+    },
+    items: [34, 35, 36, 37, 38].map((n) => ({
+      source_id: String(n),
+      name: `${n} – Pasta selecionada`,
+      target: `mega:ANEST REVIEW 2026/${n} – Pasta selecionada`,
+    })),
+    steps: ['Conferir origens', 'Consultar espaço', 'Copiar e auditar'],
+    note: 'Mantém o nome de cada pasta selecionada.',
+  };
+  const actions: string[] = [];
+  await page.route(`**/api/conversations/${chat.id}/plan`, (route) =>
+    route.fulfill({ json: plan }),
+  );
+  await page.route(`**/api/conversations/${chat.id}/plans/test-plan/*`, (route) => {
+    actions.push(route.request().url().split('/').pop()!);
+    if (actions.at(-1) === 'execute') plan.status = 'started';
+    return route.fulfill({ json: { job_id: 'test-only', copied: false } });
+  });
+  await page.addInitScript((id) => localStorage.setItem('dta-conversation', id), chat.id);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const card = page.getByRole('region', { name: 'Plano de transferência' });
+  await expect(card.locator('.plan-origins li')).toHaveCount(5);
+  await expect(card).toContainText('mega:ANEST REVIEW 2026/34 – Pasta selecionada');
+  await card.getByRole('button', { name: 'Consultar tamanho e espaço' }).click();
+  await expect(card.getByRole('button', { name: 'Aprovar plano e iniciar' })).toBeEnabled();
+  expect(actions).toEqual(['preflight']);
+  await card.getByRole('button', { name: 'Aprovar plano e iniciar' }).click();
+  await expect(card).toContainText('Plano enviado ao executor');
+  expect(actions).toEqual(['preflight', 'execute']);
+  plan.status = 'ready';
+  plan.stale = true;
+  await page.reload();
+  await expect(card).toContainText('O pedido mudou');
+  await expect(card.getByRole('button')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await request.delete(`/api/conversations/${chat.id}`, { headers: { 'x-dta-request': '1' } });
+});
+
 for (const mobile of [false, true]) {
   test(`conversation management: archive, restore and delete${mobile ? ' on mobile' : ''}`, async ({
     page,

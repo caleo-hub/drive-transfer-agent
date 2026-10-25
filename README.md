@@ -11,6 +11,8 @@ Built with Google ADK, OpenAI, FastAPI, React and rclone. Developed on Ubuntu; d
 ## O que está incluído
 
 - Chat em português, ferramentas ADK e preferências persistentes.
+- 27 ferramentas para descobrir pastas/IDs, buscar, medir, planejar, copiar e verificar: [catálogo completo e exemplos](docs/ferramentas-e-planejamento.md).
+- Seleção por nomes ou intervalos como “pastas 34 a 38”, com plano persistente, caminhos exatos e aprovação quando solicitada.
 - Menu por conversa para arquivar, restaurar e excluir, com confirmação antes da exclusão.
 - Arquivos individuais e pastas do Google Drive → PC ou MEGA; nenhuma exclusão na origem.
 - Instalação oficial do rclone com SHA-256, conexão Google OAuth e formulário protegido MEGA.

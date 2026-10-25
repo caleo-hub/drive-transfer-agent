@@ -4,7 +4,9 @@ import json
 import re
 
 from .models import DestinationInput, ItemInput, JobInput, Preferences, QueueAction
-from .safety import SECRET_PATTERN, DomainError, public_url, redact
+from .planning import Planner
+from .safety import SECRET_PATTERN, DomainError, parse_drive_url, public_url, redact
+from .storage_tools import StorageTools
 from .store import uid
 
 INSTRUCTION = """Você é o assistente do Drive Transfer Agent. Responda em português, de forma curta e clara.
@@ -24,6 +26,18 @@ O usuário pode fechar o chat: a tarefa segue enquanto o aplicativo estiver ativ
 Para mudar destino, apresente os destinos cadastrados. Para novo destino, use ferramenta validada.
 Use source_refs das fontes registradas no contexto; não construa links nem adivinhe IDs.
 Se a ferramenta falhar, informe a falha real e a próxima ação. Não anuncie que fez algo sem ferramenta.
+Para listar pastas e IDs, use list_source_children; inspect mede arquivos/tamanho e NÃO lista subpastas.
+Para 'pastas 34 a 38', use select_source_folders na pasta-pai. A ferramenta resolve os IDs reais.
+Nunca peça ao usuário IDs internos que list_source_children/select_source_folders podem consultar.
+Se faltar um número ou houver nomes repetidos, mostre o problema; nunca substitua pela pasta inteira.
+Uma pasta MEGA já existente pode não estar cadastrada: use list_mega_folders e resolve_mega_destination.
+Um link mega.nz/fm é navegação e não uma nova autenticação. Use a conexão existente.
+Antes de copiar, crie plan_transfer: confira as origens e cada caminho de destino.
+Enviar as pastas selecionadas para /CURSO significa /CURSO/<nome de cada pasta>, sem incluir a pasta-pai.
+Se pedirem plano primeiro, apresente o plano e aguarde aprovação. Não execute no mesmo turno.
+Quando um plano existente estiver aprovado, use execute_transfer_plan com seu ID, sem recriar outro.
+Use current_plan para retomar pedidos. O backend bloqueia mudanças de seleção/destino após o plano.
+Conexões marcadas como configuradas no contexto devem ser usadas; só solicite reconexão após falha real.
 """
 
 
@@ -34,6 +48,8 @@ class Chat:
         self.locks = {}
         self.session_service = None
         self.model_factory = None
+        self.planner = Planner(store, executor, connections)
+        self.storage = StorageTools(executor, self.planner)
 
     def create(self):
         body = {"id": uid(), "title": "Nova conversa", "archived": False}
@@ -88,6 +104,13 @@ class Chat:
             """Abre cartão protegido. provider: google, mega, model, rclone, destination ou preferences."""
             if provider not in {"google", "mega", "model", "rclone", "destination", "preferences"}:
                 return {"error": "Configuração inválida."}
+            if provider in {"google", "mega", "model"} and self.connections.status().get(provider):
+                failures = store.get("connection_failure", conversation, {})
+                if not failures.get(provider):
+                    return {
+                        "configured": True,
+                        "message": "Essa conexão já está configurada. Consulte e use as pastas existentes; teste a conexão se houver erro real.",
+                    }
             return {
                 "ui_action": {"type": "setup", "provider": provider},
                 "message": "Use o cartão protegido na interface para continuar.",
@@ -98,8 +121,15 @@ class Chat:
             try:
                 async with executor.maintenance:
                     executor.idle()
-                    return await self.connections.test(provider)
+                    result = await self.connections.test(provider)
+                    failures = store.get("connection_failure", conversation, {})
+                    failures.pop(provider, None)
+                    store.put("connection_failure", conversation, failures)
+                    return result
             except DomainError as error:
+                failures = store.get("connection_failure", conversation, {})
+                failures[provider] = True
+                store.put("connection_failure", conversation, failures)
                 return {"error": str(error)}
 
         def list_destinations() -> dict:
@@ -147,6 +177,122 @@ class Chat:
         def prepared_queue() -> dict:
             """Consulta a fila atual e seus IDs estáveis antes de alterar posições ou nomes."""
             return redact(queues.get(conversation))
+
+        async def list_source_children(source_ref: str, page_token: str = "", page_size: int = 100) -> dict:
+            """Lista filhos imediatos e IDs reais; folders e files são separados por kind. Siga next_page_token."""
+            try:
+                return await self.planner.browse(source_ref, page_token, page_size)
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        async def select_source_folders(
+            parent_ref: str = "", start_number: int = 0, end_number: int = 0, names: list[str] = []
+        ) -> dict:
+            """Resolve todas as páginas e seleciona subpastas por intervalo ou nomes exatos; falha em faltas/duplicatas."""
+            try:
+                return await self.planner.select(conversation, parent_ref, start_number, end_number, names)
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        async def list_mega_folders(path: str = "") -> dict:
+            """Lista pastas existentes no MEGA conectado, com caminhos reais. path vazio lista a raiz."""
+            try:
+                return await self.planner.mega_folders(path)
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        async def resolve_mega_destination(path: str) -> dict:
+            """Confirma uma pasta existente, como /ANEST REVIEW 2026, e retorna destination_id sem criar subpastas."""
+            try:
+                return await self.planner.resolve_mega(path)
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        async def plan_transfer(
+            destination_id: str = "",
+            source_refs: list[str] = [],
+            selection_id: str = "",
+            names: list[str] = [],
+            mode: str = "download",
+        ) -> dict:
+            """Salva plano com IDs/nomes e destinos exatos. Planejar não copia; respeita seleção e revisão solicitadas."""
+            try:
+                return await self.planner.create(
+                    conversation, destination_id, source_refs, selection_id, names, mode, request
+                )
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        def current_plan() -> dict:
+            """Consulta plano e seleção persistidos para continuar sem pedir novamente links ou autenticação."""
+            intent = store.get("intent", conversation, {})
+            return {
+                "plan": self.planner.latest(conversation),
+                "intent": intent,
+                "selection": store.get("selection", intent.get("selection_id", "")),
+            }
+
+        async def execute_transfer_plan(plan_id: str) -> dict:
+            """Executa o plano salvo uma única vez, após aprovação humana quando solicitada."""
+            try:
+                return await self.planner.execute(plan_id, conversation)
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        async def preflight_transfer_plan(plan_id: str) -> dict:
+            """Consulta contagem, tamanho e espaço para as origens do plano, sem copiar. Acompanhe job_id."""
+            try:
+                return await self.planner.preflight(plan_id, conversation)
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        async def source_metadata(source_ref: str) -> dict:
+            """Consulta ID, nome, tipo, pasta-pai e permissão de download de uma origem registrada."""
+            try:
+                source = self.planner.source(source_ref)
+                metadata = await self.connections.metadata(source["id"], source.get("resource_key", ""))
+                return {
+                    "source_ref": source_ref,
+                    **{
+                        k: metadata[k]
+                        for k in ("id", "name", "mimeType", "parents", "size", "capabilities")
+                        if k in metadata
+                    },
+                }
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        async def search_source_entries(
+            parent_ref: str, query: str, recursive: bool = False, limit: int = 50
+        ) -> dict:
+            """Busca arquivos/pastas por nome; recursão limitada a 3 níveis e 20 páginas, sinalizando cortes."""
+            try:
+                return await self.storage.search_source(parent_ref, query, recursive, limit)
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        async def list_destination_entries(
+            destination_id: str, path: str = "", offset: int = 0, limit: int = 100
+        ) -> dict:
+            """Lista arquivos/subpastas do destino cadastrado, sem sair da pasta base. Siga next_offset."""
+            try:
+                return await self.storage.list_entries(destination_id, path, offset, limit)
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        async def destination_usage(destination_id: str, path: str = "") -> dict:
+            """Mede quantidade e bytes em um destino/subpasta existente usando rclone size, sem copiar."""
+            try:
+                return await self.storage.usage(destination_id, path)
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
+
+        async def create_destination_folder(destination_id: str, path: str) -> dict:
+            """Cria uma subpasta validada no destino quando solicitada; não usar para uma pasta já existente."""
+            try:
+                return await self.storage.mkdir(conversation, destination_id, path)
+            except (DomainError, ValueError) as error:
+                return {"error": str(error)}
 
         def change_queue(
             action: str,
@@ -202,6 +348,21 @@ class Chat:
                     create_empty=prefs.create_empty,
                     auto_repair=prefs.auto_repair,
                 )
+                if mode != "inspect":
+                    plan = await self.planner.create(
+                        conversation,
+                        spec.destination_id,
+                        [i.source_ref for i in items],
+                        names=[i.folder_label for i in items] if all(i.folder_label for i in items) else [],
+                        mode=mode,
+                        request_id=request,
+                    )
+                    if plan["requires_approval"] and not plan["approved"]:
+                        return {
+                            "plan": plan,
+                            "message": "Plano pronto. Apresente as origens e destinos e aguarde aprovação.",
+                        }
+                    return await self.planner.execute(plan["id"], conversation)
                 signature = hashlib.sha256(spec.model_dump_json().encode()).hexdigest()[:16]
                 job, _ = await executor.start(spec, f"chat:{conversation}:{request}:{signature}")
                 return {
@@ -254,9 +415,9 @@ class Chat:
                     raise DomainError("Destino não encontrado.")
                 if required_bytes < 0:
                     raise DomainError("Tamanho inválido.")
-                if dest["kind"] == "mega":
+                async with executor.maintenance:
                     executor.idle()
-                return await executor.capacity(dest, required_bytes)
+                    return await executor.capacity(dest, required_bytes)
             except DomainError as error:
                 return {"error": str(error)}
 
@@ -283,6 +444,19 @@ class Chat:
             save_destination,
             set_preferences,
             prepared_queue,
+            list_source_children,
+            select_source_folders,
+            list_mega_folders,
+            resolve_mega_destination,
+            plan_transfer,
+            current_plan,
+            execute_transfer_plan,
+            preflight_transfer_plan,
+            source_metadata,
+            search_source_entries,
+            list_destination_entries,
+            destination_usage,
+            create_destination_folder,
             change_queue,
             run_transfer,
             task_status,
@@ -310,6 +484,30 @@ class Chat:
             sources = []
             for url in re.findall(r"https?://(?:www\.)?drive\.google\.com/[^\s<>]+", text):
                 sources.append(self.executor.register_source(url.rstrip(".,;)")))
+            # Backfill existing conversations so a correction such as "só 34 a 38" survives upgrades.
+            if self.store.get("intent", conversation) is None:
+                known = self.store.list("source")
+                for message in self.store.messages(conversation):
+                    if message["role"] != "user":
+                        continue
+                    old_sources = []
+                    for url in re.findall(r"https?://(?:www\.)?drive\.google\.com/[^\s<>]+", message["text"]):
+                        try:
+                            object_id = parse_drive_url(public_url(url.rstrip(".,;)")))["id"]
+                            for source in known:
+                                if source["id"] == object_id:
+                                    old_sources.append(
+                                        {
+                                            "source_ref": hashlib.sha256(source["url"].encode()).hexdigest()[
+                                                :32
+                                            ]
+                                        }
+                                    )
+                                    break
+                        except (DomainError, ValueError):
+                            pass
+                    self.planner.capture_intent(conversation, message["text"], old_sources)
+            intent = self.planner.capture_intent(conversation, text, sources)
             safe_text = text
             for source in sources:
                 raw = self.store.get("source", source["source_ref"])["url"]
@@ -326,6 +524,9 @@ class Chat:
             if (
                 sources
                 and not stripped.strip(" \n\r,;")
+                and not intent.get("selection_required")
+                and not intent.get("require_review")
+                and not intent.get("discovery_only")
                 and (prefs.destination_id or prefs.default_action == "inspect")
             ):
                 tool = next(t for t in self.tools(conversation, request) if t.__name__ == "run_transfer")
@@ -403,6 +604,8 @@ class Chat:
                         "destinations": self.store.list("destination"),
                         "current_queue": self.queues.get(conversation),
                         "connections": self.connections.status(),
+                        "transfer_intent": self.store.get("intent", conversation),
+                        "current_plan": self.planner.latest(conversation),
                     },
                     ensure_ascii=False,
                 )

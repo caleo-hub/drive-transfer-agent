@@ -35,6 +35,8 @@ O relatório combinado do check distingue `+` (ausente no destino), `*` (diferen
 
 O modelo vê referências opacas às fontes. Chaves de recurso permanecem disponíveis ao executor e são removidas dos dados públicos. Filas têm IDs estáveis e persistência própria.
 
+`Planner` separa descoberta de filhos por ID, seleção e plano imutável. A intenção por conversa vincula intervalo/nomes, pasta-pai e destino; mudanças de escopo invalidam o plano anterior. O executor valida esses limites abaixo de todas as ferramentas, incluindo compatibilidade e novas tentativas. A aprovação pedida pelo usuário só vem de mensagem humana reconhecida ou rota protegida da interface. `StorageTools` oferece inventário, tamanho e criação de subpastas dentro de destinos validados. Veja [ferramentas e planejamento](ferramentas-e-planejamento.md).
+
 ## Primeiro uso
 
 Os cartões funcionam sem modelo. Instalação, OAuth e campos protegidos são executados por rotas de domínio. O agente pode solicitar um cartão, mas não receber sua senha. Configuração e transferências compartilham exclusão de execução para não trocar uma conta em uso.

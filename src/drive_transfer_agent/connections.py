@@ -240,3 +240,32 @@ class Connections:
                 "capacity": await self.rclone.json(["about", "mega:", "--json"], timeout=90),
             }
         raise DomainError("Provedor inválido.")
+
+    async def list_children(self, parent_id, resource_key="", page_token="", page_size=100):
+        """List immediate children, with pagination and explicit completeness information."""
+        token = await self.google_token()
+        headers = {"Authorization": f"Bearer {token['access_token']}"}
+        if resource_key:
+            headers["X-Goog-Drive-Resource-Keys"] = f"{parent_id}/{resource_key}"
+        params = {
+            "q": f"'{parent_id}' in parents and trashed = false",
+            "pageSize": min(max(page_size, 1), 1000),
+            "orderBy": "folder,name_natural",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+            "fields": "nextPageToken,incompleteSearch,files(id,name,mimeType,resourceKey,parents)",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        async with httpx.AsyncClient(timeout=30) as client:
+            result = await client.get(
+                "https://www.googleapis.com/drive/v3/files", headers=headers, params=params
+            )
+        if result.status_code != 200:
+            raise DomainError(explain_error(str(result.status_code)))
+        data = result.json()
+        if not isinstance(data, dict) or not isinstance(data.get("files"), list):
+            raise DomainError("A listagem do Drive não retornou uma página válida.")
+        if data.get("incompleteSearch"):
+            raise DomainError("A listagem do Drive está incompleta. Nenhuma seleção foi confirmada.")
+        return data

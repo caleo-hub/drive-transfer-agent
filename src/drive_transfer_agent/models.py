@@ -35,6 +35,7 @@ class JobInput(Model):
     export_gdocs: StrictBool = True
     create_empty: StrictBool = True
     auto_repair: StrictBool = True
+    plan_id: str | None = None
 
 
 class DestinationInput(Model):

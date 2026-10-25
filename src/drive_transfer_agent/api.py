@@ -266,6 +266,10 @@ def create_app(settings=None, *, vault=None, rclone=None, connections=None):
     async def source(value: ItemInput):
         return executor.register_source(value.drive_url)
 
+    @app.get("/api/sources/{source_ref}/children")
+    async def source_children(source_ref: str, page_token: str = "", page_size: int = 100):
+        return redact(await chat.planner.browse(source_ref, page_token, page_size))
+
     @app.get("/api/jobs")
     async def jobs():
         return [executor.public(j) for j in store.jobs()]
@@ -340,6 +344,30 @@ def create_app(settings=None, *, vault=None, rclone=None, connections=None):
     @app.post("/api/conversations")
     async def new_conversation():
         return chat.create()
+
+    @app.get("/api/conversations/{conversation_id}/plan")
+    async def conversation_plan(conversation_id: str):
+        chat.conversation(conversation_id)
+        plan = chat.planner.latest(conversation_id)
+        if plan:
+            intent = store.get("intent", conversation_id, {"revision": 0})
+            plan["stale"] = plan["revision"] != intent["revision"]
+        return redact(plan)
+
+    @app.post("/api/conversations/{conversation_id}/plans/{plan_id}/execute")
+    async def approve_and_execute_plan(conversation_id: str, plan_id: str):
+        async with chat.locks.setdefault(conversation_id, asyncio.Lock()):
+            chat.conversation(conversation_id, editable=True)
+            intent = store.get("intent", conversation_id, {"revision": 0})
+            intent["discovery_only"] = False
+            store.put("intent", conversation_id, intent)
+            chat.planner.approve(plan_id, conversation_id)
+            return await chat.planner.execute(plan_id, conversation_id)
+
+    @app.post("/api/conversations/{conversation_id}/plans/{plan_id}/preflight")
+    async def inspect_plan(conversation_id: str, plan_id: str):
+        chat.conversation(conversation_id, editable=True)
+        return await chat.planner.preflight(plan_id, conversation_id)
 
     @app.patch("/api/conversations/{conversation_id}")
     async def update_conversation(conversation_id: str, value: ConversationUpdate):

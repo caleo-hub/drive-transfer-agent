@@ -24,6 +24,12 @@ Registre data, plataforma, versões e resultado, sem copiar chaves, senhas ou li
 | Reiniciar aplicativo | Job interrompido; nenhuma duplicação automática | A registrar |
 | Pedidos no OpenAI | Ferramentas escolhidas e resultados reais relatados | A registrar |
 
+## Planejamento validado em 25/10/2026
+
+No Windows, com rclone v1.71.0 e as contas já configuradas, foram consultados os filhos reais de uma pasta Google Drive e confirmada uma pasta MEGA existente. Um pedido pelo chat usando OpenAI e Google ADK selecionou somente as pastas 34 a 38 e criou plano persistente com cinco IDs reais e cinco destinos diretos, mantendo os nomes e sem uma camada adicional da pasta-pai. A revisão permaneceu pendente; nenhuma tarefa de cópia foi criada. O ciclo completo levou aproximadamente 71 segundos nesta instalação.
+
+Os testes automatizados cobrem seleção paginada, números ausentes/duplicados, preservação de chaves de recurso fora das respostas públicas, aprovação, alteração de escopo/destino, execução idempotente, consulta sem cópia, inventário em lote e retomada de conversa anterior. A interface móvel foi validada para os cinco caminhos, consulta separada da aprovação e bloqueio de plano desatualizado. Esta validação comprova descoberta e planejamento com contas reais; a cópia dessas cinco pastas não foi executada.
+
 ## Roteiro do vídeo de portfólio
 
 1. Apresente o problema: transferir pastas sem terminal e sem perder o acompanhamento.

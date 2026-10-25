@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 from .models import JobInput, Preferences
+from .planning import validate_transfer_scope
 from .rclone import free_space, terminate_tree, volume_id
 from .safety import DomainError, explain_error, label, parse_drive_url, public_url, redact, relative_path
 from .store import FINAL
@@ -56,6 +57,7 @@ class Executor:
             item["drive_url"] = ""
         if spec.mode != "inspect" and not self.store.get("destination", spec.destination_id):
             raise DomainError("Escolha um destino cadastrado.")
+        validate_transfer_scope(self.store, JobInput(**data))
         return data
 
     async def start(self, spec: JobInput, idem: str):

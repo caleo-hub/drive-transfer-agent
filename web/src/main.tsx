@@ -43,6 +43,17 @@ type Message = {
 };
 type Conversation = { id: string; title: string; archived?: boolean };
 type Destination = { id: string; name: string; kind: string; path: string };
+type TransferPlan = {
+  id: string;
+  status: string;
+  stale?: boolean;
+  requires_approval: boolean;
+  approved: boolean;
+  destination: Destination;
+  items: { name: string; source_id: string; target: string }[];
+  steps: string[];
+  note: string;
+};
 type Job = {
   id: string;
   status: string;
@@ -78,6 +89,7 @@ function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [queue, setQueue] = useState<any[]>([]);
+  const [plan, setPlan] = useState<TransferPlan | null>(null);
   const [health, setHealth] = useState<any>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -109,13 +121,15 @@ function App() {
     setHealth(h);
   }
   async function load(id: string) {
-    const [ms, q] = await Promise.all([
+    const [ms, q, p] = await Promise.all([
       api(`/conversations/${id}/messages`),
       api(`/conversations/${id}/queue`),
+      api(`/conversations/${id}/plan`),
     ]);
     if (selectedId.current !== id) return;
     setMessages(ms);
     setQueue(q.items);
+    setPlan(p);
   }
   useEffect(() => {
     refresh().catch((e) => setError(e.message));
@@ -183,6 +197,7 @@ function App() {
       selectedId.current = c.id;
       setMessages([]);
       setQueue([]);
+      setPlan(null);
       setText('');
       setShowArchived(false);
       setConversationMenu('');
@@ -197,6 +212,7 @@ function App() {
     selectedId.current = '';
     setMessages([]);
     setQueue([]);
+    setPlan(null);
     setText('');
     pending.current = null;
   }
@@ -240,6 +256,19 @@ function App() {
   const selectedChat = conversations.find((c) => c.id === conversation);
   const archivedChat = !!selectedChat?.archived;
   const listedChats = conversations.filter((c) => !!c.archived === showArchived);
+  async function executePlan(action: 'execute' | 'preflight' = 'execute') {
+    if (!plan || busy || archivedChat) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/conversations/${conversation}/plans/${plan.id}/${action}`, 'POST');
+      await Promise.all([load(conversation), refresh()]);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function send(value = text) {
     if (!value.trim() || busy || archivedChat || managing) return;
     setBusy(true);
@@ -538,6 +567,54 @@ function App() {
                     Preparando sua resposta
                   </div>
                 </div>
+              )}
+            </section>
+          )}
+          {plan && (
+            <section className="transfer-plan" aria-label="Plano de transferência">
+              <div className="plan-heading">
+                <FileText size={18} />
+                <strong>Plano de transferência · {plan.items.length} origens</strong>
+              </div>
+              <p>
+                Destino: <strong>{plan.destination.name}</strong>
+              </p>
+              <ol className="plan-origins">
+                {plan.items.map((item) => (
+                  <li key={item.source_id}>
+                    <strong>{item.name}</strong>
+                    <span>{item.target}</span>
+                  </li>
+                ))}
+              </ol>
+              <p className="small muted">{plan.note}</p>
+              <details>
+                <summary>Etapas planejadas</summary>
+                <ol>
+                  {plan.steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              </details>
+              {plan.stale ? (
+                <p role="status">O pedido mudou. Prepare um novo plano antes de iniciar.</p>
+              ) : plan.status === 'ready' ? (
+                <div className="plan-actions">
+                  <button disabled={busy || archivedChat} onClick={() => executePlan('preflight')}>
+                    Consultar tamanho e espaço
+                  </button>
+                  <button
+                    className="primary"
+                    disabled={busy || archivedChat}
+                    onClick={() => executePlan()}
+                  >
+                    {plan.requires_approval && !plan.approved
+                      ? 'Aprovar plano e iniciar'
+                      : 'Iniciar plano'}
+                  </button>
+                </div>
+              ) : (
+                <p role="status">Plano enviado ao executor. Acompanhe o resultado na tarefa.</p>
               )}
             </section>
           )}

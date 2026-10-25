@@ -61,6 +61,12 @@ class Store:
             db.execute("INSERT OR REPLACE INTO documents VALUES(?,?,?)", (kind, key, json.dumps(body)))
         return body
 
+    def put_many(self, kind, records):
+        """Persist one inventory page atomically, with one disk commit."""
+        values = [(kind, key, json.dumps(body)) for key, body in records]
+        with self.connect() as db:
+            db.executemany("INSERT OR REPLACE INTO documents VALUES(?,?,?)", values)
+
     def list(self, kind):
         with self.connect() as db:
             return [json.loads(r[0]) for r in db.execute("SELECT body FROM documents WHERE kind=?", (kind,))]
@@ -73,7 +79,12 @@ class Store:
         with self.connect() as db:
             db.execute("DELETE FROM messages WHERE conversation_id=?", (conversation,))
             db.execute(
-                "DELETE FROM documents WHERE kind IN ('conversation','queue') AND id=?", (conversation,)
+                "DELETE FROM documents WHERE kind IN ('conversation','queue','intent','latest_plan','connection_failure') AND id=?",
+                (conversation,),
+            )
+            db.execute(
+                "DELETE FROM documents WHERE kind IN ('selection','plan') AND json_extract(body,'$.conversation_id')=?",
+                (conversation,),
             )
 
     def active(self):
