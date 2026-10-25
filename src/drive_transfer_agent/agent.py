@@ -304,7 +304,7 @@ class Chat:
                     "Na cópia, arquivos diferentes podem ser atualizados; os originais ficam preservados.",
                     job_ids=[result["job_id"]],
                 )
-            key = self.settings.google_api_key or self.vault.get("model", "")
+            key = self.settings.openai_api_key or self.vault.get("openai", "")
             if not key:
                 lower = text.casefold()
                 provider = (
@@ -321,7 +321,7 @@ class Chat:
                     )
                 )
                 answer = "Vamos preparar o aplicativo. Abra Configuração para instalar o rclone, conectar suas contas "
-                answer += "e informar a chave Gemini no campo protegido. Depois escolha seu destino padrão."
+                answer += "e informar a chave OpenAI no campo protegido. Depois escolha seu destino padrão."
                 return self.store.add_message(
                     conversation,
                     request,
@@ -330,10 +330,9 @@ class Chat:
                     actions=[{"type": "setup", "provider": provider}],
                 )
             try:
-                from google import genai
                 from google.adk.agents import Agent
                 from google.adk.agents.run_config import RunConfig
-                from google.adk.models.google_llm import Gemini
+                from google.adk.models.lite_llm import LiteLlm
                 from google.adk.runners import Runner
                 from google.adk.sessions import DatabaseSessionService
                 from google.genai import types
@@ -372,7 +371,11 @@ class Chat:
                 model = (
                     self.model_factory(key)
                     if self.model_factory
-                    else Gemini(model=self.settings.agent_model, client=genai.Client(api_key=key))
+                    else LiteLlm(
+                        model=self.settings.agent_model,
+                        api_key=key,
+                        api_base="https://api.openai.com/v1",
+                    )
                 )
                 agent = Agent(
                     name="transfer_assistant",
@@ -406,6 +409,6 @@ class Chat:
                     conversation,
                     request,
                     "assistant",
-                    "Não consegui concluir a resposta do modelo. Confira a chave Gemini e a conexão. "
+                    "Não consegui concluir a resposta do modelo. Confira a chave OpenAI e a conexão. "
                     "Se uma tarefa já foi iniciada, ela continua no cartão de tarefas; consulte antes de repetir.",
                 )

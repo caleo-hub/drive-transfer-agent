@@ -40,7 +40,7 @@ async def test_real_adk_runner_function_call_and_persistent_session(settings, st
     executor = Executor(settings, store, object(), ConnectionStub())
     chat = Chat(settings, store, vault, executor, ConnectionStub(), Queues(store))
     chat.model_factory = lambda _: ScriptedModel()
-    vault.set("model", "offline-test-placeholder")
+    vault.set("openai", "offline-test-placeholder")
     conversation = chat.create()["id"]
     answer = await chat.send(conversation, "Quero conectar meu Google Drive", "runtime-request")
     assert answer["text"] == "Abra o cartão para conectar sua conta Google."

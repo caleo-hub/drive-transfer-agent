@@ -4,6 +4,7 @@
 flowchart TD
   UI[React: conversa e cartões protegidos] --> API[FastAPI local]
   API --> ADK[Google ADK: agente e ferramentas]
+  ADK --> LiteLLM[LiteLLM: API OpenAI]
   ADK --> Services[Serviços de domínio]
   API --> Services
   Services --> Jobs[Executor persistente]

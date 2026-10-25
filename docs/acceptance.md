@@ -22,7 +22,7 @@ Registre data, plataforma, versões e resultado, sem copiar chaves, senhas ou li
 | Acesso negado/cota | Explicação sem falso sucesso | A registrar |
 | Cancelar e reabrir chat | Estado real e arquivos concluídos preservados | A registrar |
 | Reiniciar aplicativo | Job interrompido; nenhuma duplicação automática | A registrar |
-| Pedidos no Gemini | Ferramentas escolhidas e resultados reais relatados | A registrar |
+| Pedidos no OpenAI | Ferramentas escolhidas e resultados reais relatados | A registrar |
 
 ## Roteiro do vídeo de portfólio
 

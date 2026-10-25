@@ -647,7 +647,7 @@ function SetupPanel({
   });
   const tabs = [
     ['rclone', 'Aplicativo'],
-    ['model', 'Gemini'],
+    ['model', 'OpenAI'],
     ['google', 'Google Drive'],
     ['mega', 'MEGA'],
     ['destination', 'Destinos'],
@@ -787,11 +787,11 @@ function SetupPanel({
                   const result = await api('/setup', 'POST', { kind: 'model', values });
                   setValues({});
                   return result;
-                }, 'Chave Gemini salva com proteção local.');
+                }, 'Chave OpenAI salva com proteção local.');
               }}
             >
               <span className="form-kicker">SUA CONVERSA</span>
-              <h3>Conecte o Gemini</h3>
+              <h3>Conecte o OpenAI</h3>
               <p>
                 Informe a chave da API neste campo protegido. Ela não será enviada como mensagem ao
                 assistente.
@@ -805,11 +805,11 @@ function SetupPanel({
               </button>
               <a
                 className="help-link"
-                href="https://aistudio.google.com/apikey"
+                href="https://platform.openai.com/api-keys"
                 target="_blank"
                 rel="noreferrer"
               >
-                Obter chave no Google AI Studio
+                Obter chave na OpenAI
                 <ExternalLink size={13} />
               </a>
             </form>

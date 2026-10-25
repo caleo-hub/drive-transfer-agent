@@ -25,14 +25,14 @@ class Connections:
             return {
                 "google": bool(data.get("google")),
                 "mega": bool(data.get("mega")),
-                "model": bool(self.settings.google_api_key or data.get("model")),
+                "model": bool(self.settings.openai_api_key or data.get("openai")),
                 "vault_available": True,
             }
         except DomainError:
             return {
                 "google": False,
                 "mega": False,
-                "model": bool(self.settings.google_api_key),
+                "model": bool(self.settings.openai_api_key),
                 "vault_available": False,
             }
 

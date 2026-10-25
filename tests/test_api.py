@@ -35,7 +35,8 @@ async def test_local_guard_and_non_echoing_validation(app):
         assert "private-value" not in response.text
 
 
-async def test_setup_without_model_and_secret_paste_not_saved(app):
+@pytest.mark.parametrize("secret", ["AIza" + "x" * 35, "sk-" + "x" * 40, "sk-proj-" + "x" * 80])
+async def test_setup_without_model_and_secret_paste_not_saved(app, secret):
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver", headers={"x-dta-request": "1"}
     ) as client:
@@ -45,7 +46,6 @@ async def test_setup_without_model_and_secret_paste_not_saved(app):
         )
         assert response.status_code == 200
         assert response.json()["actions"][0]["provider"] == "model"
-        secret = "AIza" + "x" * 35
         await client.post(
             f"/api/conversations/{conversation}/messages", json={"text": secret, "request_id": "request-0002"}
         )
@@ -83,3 +83,21 @@ async def test_preferences_destination_validation(app, settings):
         response = await client.put("/api/preferences", json={"destination_id": destination["id"]})
         assert response.status_code == 200
         assert (await client.put("/api/preferences", json={"destination_id": "missing"})).status_code == 400
+
+
+async def test_model_setup_is_private_and_separate_from_legacy_key(app, vault):
+    vault.set("model", "legacy-gemini-placeholder")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver", headers={"x-dta-request": "1"}
+    ) as client:
+        assert (await client.get("/api/connections")).json()["model"] is False
+        secret = "sk-proj-" + "x" * 80
+        response = await client.post("/api/setup", json={"kind": "model", "values": {"api_key": secret}})
+        assert response.status_code == 200
+        assert secret not in response.text
+        assert vault.get("openai") == secret
+        assert (await client.get("/api/connections")).json()["model"] is True
+        await client.delete("/api/connections/model")
+        assert vault.get("openai") is None
+        assert vault.get("model") == "legacy-gemini-placeholder"
+        assert (await client.get("/api/connections")).json()["model"] is False

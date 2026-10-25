@@ -11,7 +11,7 @@ test('onboarding, destinations and conversation work before configuring the mode
   await expect(page.getByRole('heading', { level: 1 })).toContainText('no lugar certo');
   await page.getByRole('button', { name: 'Preparar meu espaço' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByRole('button', { name: 'Gemini', exact: true }).click();
+  await page.getByRole('button', { name: 'OpenAI', exact: true }).click();
   await expect(page.getByLabel('Chave da API')).toHaveAttribute('type', 'password');
   await page.getByRole('dialog').getByRole('button', { name: 'Google Drive', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Preparar conexão Google' })).toBeVisible();

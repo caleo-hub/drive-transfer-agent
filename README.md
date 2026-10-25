@@ -2,7 +2,7 @@
 
 **Um assistente de arquivos feito para uma pessoa real.** Cole um link do Google Drive, peça uma cópia para o PC ou MEGA e acompanhe consulta, transferência e auditoria no chat.
 
-Built with Google ADK, FastAPI, React and rclone. Developed on Ubuntu; designed to run locally on Windows. The language model plans operations through typed tools; a persistent executor performs and verifies the work.
+Built with Google ADK, OpenAI, FastAPI, React and rclone. Developed on Ubuntu; designed to run locally on Windows. The language model plans operations through typed tools; a persistent executor performs and verifies the work.
 
 ![Interface do Drive Transfer Agent](docs/images/overview.png)
 
@@ -53,7 +53,7 @@ Não versione nem perca essa chave. O aplicativo não cria um fallback em texto 
 Instale Python 3.12+, uv e Node 22 para a instalação a partir do código. Clone o repositório e execute `instalar.ps1` uma vez. Depois use `iniciar.bat` para abrir o aplicativo. A instalação do rclone e a conexão das contas são feitas nos cartões de Configuração.
 
 1. Instale o rclone pelo cartão **Aplicativo**.
-2. Informe sua chave Gemini no cartão **Gemini**.
+2. Informe sua chave OpenAI no cartão **OpenAI**.
 3. Conecte Google Drive e, se desejado, MEGA.
 4. Cadastre um destino e selecione-o nas preferências.
 5. Envie um link ou um pedido como “adicione estas pastas à fila”.
@@ -76,11 +76,15 @@ Consulte `.env.example`. Variáveis opcionais:
 |---|---|
 | `DTA_DATA_DIR` | Diretório privado do aplicativo; padrão do sistema operacional |
 | `DTA_PORT` | Porta local, padrão 8765 |
-| `AGENT_MODEL` | Modelo Gemini, padrão `gemini-flash-latest` |
-| `GOOGLE_API_KEY` | Chave Gemini opcional, alternativa ao cartão protegido |
+| `AGENT_MODEL` | Modelo OpenAI via LiteLLM, padrão `openai/gpt-5.4-mini` |
+| `OPENAI_API_KEY` | Chave OpenAI opcional, alternativa ao cartão protegido |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Cliente OAuth provisionado pelo desenvolvedor |
 | `RCLONE_BIN` | Executável explicitamente escolhido; precede instalação gerenciada e PATH |
 | `DTA_MASTER_KEY` | Alternativa explícita ao keyring para desenvolvimento sem desktop |
+
+O agente usa [OpenAI pelo conector LiteLLM do ADK](https://adk.dev/agents/models/litellm/). Cadastre a chave em **Configuração → OpenAI** ou use `OPENAI_API_KEY` no ambiente/`.env` (o ambiente tem precedência). Ela fica no backend; o navegador não chama a API OpenAI diretamente. `AGENT_MODEL` aceita o nome puro ou o prefixo `openai/`. A configuração Google OAuth continua sendo necessária apenas para acessar o Drive.
+
+Ao atualizar de uma instalação Gemini, cadastre uma chave OpenAI nova e ajuste qualquer `AGENT_MODEL` antigo. Chaves legadas não são reaproveitadas nem enviadas à OpenAI.
 
 Dados operacionais ficam em `jobs.sqlite3`, sessões ADK em `sessions.sqlite3`, credenciais em `secrets.enc`. Backends e credenciais são injetados no ambiente privado dos subprocessos. O rclone usa configuração em memória (`--config` com valor vazio), impedindo que uma renovação de token grave um arquivo de credenciais em texto puro. Não copiamos a configuração global do rclone.
 

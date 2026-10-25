@@ -76,7 +76,7 @@ def local_path(value: str, *, windows: bool | None = None) -> str:
 
 
 SECRET_PATTERN = re.compile(
-    r"AIza[\w-]{20,}|ya29\.[\w.-]+|1//[\w.-]{20,}|"
+    r"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}|AIza[\w-]{20,}|ya29\.[\w.-]+|1//[\w.-]{20,}|"
     r"(?:password|senha|access_token|refresh_token|api_key|client_secret)\s*[=:]\s*[^\s,;]+",
     re.I,
 )

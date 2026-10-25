@@ -56,7 +56,13 @@ class Rclone:
         return binary
 
     async def environment(self, providers):
-        env = {k: v for k, v in os.environ.items() if not k.upper().startswith("RCLONE_")}
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if not k.upper().startswith("RCLONE_")
+            and k.upper()
+            not in {"OPENAI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLIENT_SECRET", "DTA_MASTER_KEY"}
+        }
         env.update(RCLONE_CONFIG_GDRIVE_TYPE="drive", RCLONE_CONFIG_MEGA_TYPE="mega")
         if self.credentials and providers:
             env.update(await self.credentials(providers))

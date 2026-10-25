@@ -119,7 +119,7 @@ def create_app(settings=None, *, vault=None, rclone=None, connections=None):
                 key = value.values.get("api_key", "").strip()
                 if not key:
                     raise DomainError("Informe a chave no campo protegido.")
-                vault.set("model", key)
+                vault.set("openai", key)
                 return {"status": "saved", "provider": "model"}
             if value.kind == "google":
                 return connections.begin_google(value.values)
@@ -159,7 +159,7 @@ def create_app(settings=None, *, vault=None, rclone=None, connections=None):
             raise DomainError("Provedor inválido.")
         async with executor.maintenance:
             executor.idle()
-            vault.set(provider, None)
+            vault.set("openai" if provider == "model" else provider, None)
             if provider == "google":
                 for flow in connections.flows.values():
                     if flow["status"] == "pending":
