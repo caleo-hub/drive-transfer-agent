@@ -6,9 +6,18 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 dependencies = [
-  "fastapi>=0.115", "uvicorn>=0.34", "google-adk[db]>=2.12", "litellm>=1.82.9",
-  "httpx>=0.28", "pydantic-settings>=2.8", "aiosqlite>=0.21",
-  "keyring>=25.6", "cryptography>=44", "psutil>=7", "platformdirs>=4.3", "filelock>=3.20"
+  "fastapi>=0.115",
+  "uvicorn>=0.34",
+  "google-adk[db]>=2.12",
+  "litellm[mcp]>=1.82.9",
+  "httpx>=0.28",
+  "pydantic-settings>=2.8",
+  "aiosqlite>=0.21",
+  "keyring>=25.6",
+  "cryptography>=44",
+  "psutil>=7",
+  "platformdirs>=4.3",
+  "filelock>=3.20",
 ]
 
 [project.scripts]

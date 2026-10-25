@@ -1,6 +1,7 @@
 import json
 import os
 
+import httpx
 import pytest
 from google.adk.models.lite_llm import LiteLLMClient
 from litellm import ModelResponse
@@ -11,6 +12,85 @@ from drive_transfer_agent.config import Settings
 from drive_transfer_agent.executor import Executor
 from drive_transfer_agent.queue import Queues
 from drive_transfer_agent.rclone import Rclone
+
+
+@pytest.mark.parametrize(
+    ("model", "endpoint"),
+    [("gpt-5.4-mini", "/v1/responses"), ("gpt-4o-mini", "/v1/chat/completions")],
+)
+async def test_real_openai_transport_with_tools_imports_optional_dependencies(
+    settings, store, vault, monkeypatch, model, endpoint
+):
+    """Mock only HTTP so the actual LiteLLM tool dispatch/import path is exercised."""
+    calls = []
+
+    async def send(self, request, **kwargs):
+        assert request.url.host == "api.openai.com"
+        assert request.url.path == endpoint
+        body = json.loads(request.content)
+        assert body["tools"]
+        calls.append(body)
+        if endpoint == "/v1/responses":
+            return httpx.Response(
+                200,
+                request=request,
+                json={
+                    "id": "resp_offline",
+                    "object": "response",
+                    "created_at": 0,
+                    "model": model,
+                    "status": "completed",
+                    "output": [
+                        {
+                            "type": "message",
+                            "id": "msg_offline",
+                            "role": "assistant",
+                            "status": "completed",
+                            "content": [
+                                {"type": "output_text", "text": "Conexão funcionando.", "annotations": []}
+                            ],
+                        }
+                    ],
+                    "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                },
+            )
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "id": "offline-transport-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "Conexão funcionando."},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", send)
+
+    class Connections:
+        def status(self):
+            return {"google": False, "mega": False}
+
+    connection = Connections()
+    settings.agent_model = "openai/" + model
+    chat = Chat(
+        settings, store, vault, Executor(settings, store, object(), connection), connection, Queues(store)
+    )
+    conversation = chat.create()["id"]
+    before_setup = await chat.send(conversation, "Olá", "before-setup-request")
+    assert before_setup["actions"] == [{"type": "setup", "provider": "model"}]
+    vault.set("openai", "sk-offline-transport-placeholder")
+    answer = await chat.send(conversation, "Olá", "transport-request")
+    assert answer["text"] == "Conexão funcionando."
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("name", ["gpt-5.4-mini", "openai/gpt-5.4-mini"])

@@ -36,8 +36,46 @@ class Chat:
         self.model_factory = None
 
     def create(self):
-        body = {"id": uid(), "title": "Nova conversa"}
+        body = {"id": uid(), "title": "Nova conversa", "archived": False}
         return self.store.put("conversation", body["id"], body)
+
+    def conversation(self, conversation, *, editable=False):
+        body = self.store.get("conversation", conversation)
+        if body is None:
+            raise DomainError("Conversa não encontrada.", 404)
+        if editable and body.get("archived", False):
+            raise DomainError("Restaure esta conversa antes de enviar mensagens ou alterar a fila.", 409)
+        return body
+
+    async def archive(self, conversation, archived):
+        async with self.locks.setdefault(conversation, asyncio.Lock()):
+            body = self.conversation(conversation)
+            body["archived"] = archived
+            return self.store.put("conversation", conversation, body)
+
+    async def delete(self, conversation):
+        async with self.locks.setdefault(conversation, asyncio.Lock()):
+            async with self.executor.maintenance:
+                self.conversation(conversation)
+                active = self.store.active()
+                if active and active["spec"].get("conversation_id") == conversation:
+                    raise DomainError(
+                        "Esta conversa tem uma tarefa ativa. Aguarde terminar ou cancele antes de excluir.",
+                        409,
+                    )
+                # Remove model context even when this session has not been opened since restart.
+                if self.session_service is None and (self.settings.data / "sessions.sqlite3").exists():
+                    from google.adk.sessions import DatabaseSessionService
+
+                    self.session_service = DatabaseSessionService(
+                        db_url=f"sqlite+aiosqlite:///{self.settings.data / 'sessions.sqlite3'}"
+                    )
+                if self.session_service is not None:
+                    await self.session_service.delete_session(
+                        app_name="drive_transfer_agent", user_id="local", session_id=conversation
+                    )
+                self.store.delete_conversation(conversation)
+        return {"deleted": True}
 
     def tools(self, conversation, request):
         executor, store, queues = self.executor, self.store, self.queues
@@ -255,9 +293,8 @@ class Chat:
         ]
 
     async def send(self, conversation, text, request):
-        if not self.store.get("conversation", conversation):
-            raise DomainError("Conversa não encontrada.", 404)
         async with self.locks.setdefault(conversation, asyncio.Lock()):
+            self.conversation(conversation, editable=True)
             old = self.store.reply(conversation, request)
             if old:
                 return old
@@ -365,6 +402,7 @@ class Chat:
                         "preferences": prefs,
                         "destinations": self.store.list("destination"),
                         "current_queue": self.queues.get(conversation),
+                        "connections": self.connections.status(),
                     },
                     ensure_ascii=False,
                 )

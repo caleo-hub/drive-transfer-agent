@@ -69,6 +69,13 @@ class Store:
         with self.connect() as db:
             db.execute("DELETE FROM documents WHERE kind=? AND id=?", (kind, key))
 
+    def delete_conversation(self, conversation):
+        with self.connect() as db:
+            db.execute("DELETE FROM messages WHERE conversation_id=?", (conversation,))
+            db.execute(
+                "DELETE FROM documents WHERE kind IN ('conversation','queue') AND id=?", (conversation,)
+            )
+
     def active(self):
         with self.connect() as db:
             row = db.execute("SELECT body FROM jobs WHERE status IN ('pending','running')").fetchone()

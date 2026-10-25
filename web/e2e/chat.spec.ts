@@ -2,6 +2,59 @@ import { test, expect } from '@playwright/test';
 import os from 'node:os';
 import path from 'node:path';
 
+for (const mobile of [false, true]) {
+  test(`conversation management: archive, restore and delete${mobile ? ' on mobile' : ''}`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.setViewportSize(
+      mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 },
+    );
+    await page.goto('/');
+    if (mobile) await page.getByRole('button', { name: 'Abrir menu' }).click();
+    await page.getByRole('button', { name: 'Nova conversa' }).click();
+    const title = 'Conversa para organizar ' + Date.now();
+    await page.getByLabel('Mensagem', { exact: true }).fill(title);
+    await page.getByRole('button', { name: 'Enviar mensagem', exact: true }).click();
+    await expect(page.getByText('Vamos preparar o aplicativo.', { exact: false })).toBeVisible();
+    if (mobile) await page.getByRole('button', { name: 'Abrir menu' }).click();
+    const active = page.getByRole('navigation', { name: 'Conversas ativas' });
+    const current = active.locator('.conversation-row.selected');
+    await expect(current.locator('.conversation-open')).toHaveText(title);
+    await current.getByRole('button', { name: 'Opções de ' + title }).click();
+    await page.getByRole('menuitem', { name: 'Arquivar conversa' }).click();
+    await expect(active.getByRole('button', { name: title, exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Ver conversas arquivadas' }).click();
+    const archived = page.getByRole('navigation', { name: 'Conversas arquivadas' });
+    await archived.getByRole('button', { name: title, exact: true }).click();
+    await expect(page.getByLabel('Mensagem', { exact: true })).toBeDisabled();
+    await page.reload();
+    await expect(page.getByLabel('Mensagem', { exact: true })).toBeDisabled();
+    await page.getByRole('button', { name: 'Restaurar conversa', exact: true }).click();
+    await expect(page.getByLabel('Mensagem', { exact: true })).toBeEnabled();
+    await expect(page.getByText('Vamos preparar o aplicativo.', { exact: false })).toBeVisible();
+    if (mobile) await page.getByRole('button', { name: 'Abrir menu' }).click();
+    await active.getByRole('button', { name: 'Opções de ' + title }).click();
+    await page.getByRole('menuitem', { name: 'Excluir conversa' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Excluir conversa?' });
+    await expect(dialog).toContainText(title);
+    await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+    await expect(active.getByRole('button', { name: title, exact: true })).toBeVisible();
+    await active.getByRole('button', { name: 'Opções de ' + title }).click();
+    await page.getByRole('menuitem', { name: 'Excluir conversa' }).click();
+    await dialog.getByRole('button', { name: 'Excluir permanentemente' }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(active.getByRole('button', { name: title, exact: true })).toHaveCount(0);
+    await page.reload();
+    expect(await page.evaluate(() => localStorage.getItem('dta-conversation'))).toBeNull();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      mobile ? 390 : 1440,
+    );
+    expect(errors).toEqual([]);
+  });
+}
+
 test('onboarding, destinations and conversation work before configuring the model', async ({
   page,
 }) => {

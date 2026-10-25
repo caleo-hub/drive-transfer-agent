@@ -24,6 +24,10 @@ import {
   PanelLeftClose,
   Menu,
   AlertCircle,
+  Archive,
+  ArchiveRestore,
+  MoreHorizontal,
+  Trash2,
 } from 'lucide-react';
 import { api, bytes, finalStates, stageLabel, statusLabel } from './api';
 import './style.css';
@@ -37,7 +41,7 @@ type Message = {
   job_id?: string;
   status?: string;
 };
-type Conversation = { id: string; title: string };
+type Conversation = { id: string; title: string; archived?: boolean };
 type Destination = { id: string; name: string; kind: string; path: string };
 type Job = {
   id: string;
@@ -80,17 +84,26 @@ function App() {
   const [error, setError] = useState('');
   const [setup, setSetup] = useState('');
   const [sidebar, setSidebar] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [conversationMenu, setConversationMenu] = useState('');
+  const [deleting, setDeleting] = useState<Conversation | null>(null);
+  const [managing, setManaging] = useState(false);
+  const deleteDialog = useRef<HTMLDialogElement>(null);
+  const menuRoot = useRef<HTMLElement>(null);
+  const selectedId = useRef(conversation);
+  selectedId.current = conversation;
   const end = useRef<HTMLDivElement>(null);
   const pending = useRef<{ text: string; id: string } | null>(null);
 
   async function refresh() {
-    const [cs, js, ds, h] = await Promise.all([
+    const [cs, archived, js, ds, h] = await Promise.all([
       api('/conversations'),
+      api('/conversations?archived=true'),
       api('/jobs'),
       api('/destinations'),
       api('/health'),
     ]);
-    setConversations(cs);
+    setConversations([...cs, ...archived]);
     setJobs(js);
     setDestinations(ds);
     setHealth(h);
@@ -100,6 +113,7 @@ function App() {
       api(`/conversations/${id}/messages`),
       api(`/conversations/${id}/queue`),
     ]);
+    if (selectedId.current !== id) return;
     setMessages(ms);
     setQueue(q.items);
   }
@@ -120,8 +134,27 @@ function App() {
     if (conversation) {
       localStorage.setItem('dta-conversation', conversation);
       load(conversation).catch((e) => setError(e.message));
-    }
+    } else localStorage.removeItem('dta-conversation');
   }, [conversation]);
+  useEffect(() => {
+    if (!conversationMenu) return;
+    menuRoot.current?.querySelector<HTMLButtonElement>('[role="menu"] button')?.focus();
+    function outside(event: PointerEvent) {
+      if (!menuRoot.current?.contains(event.target as Node)) setConversationMenu('');
+    }
+    function escape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setConversationMenu('');
+    }
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [conversationMenu]);
+  useEffect(() => {
+    if (deleting) deleteDialog.current?.showModal();
+  }, [deleting]);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, busy]);
@@ -147,15 +180,68 @@ function App() {
       const c = await api('/conversations', 'POST');
       setConversations((old) => [...old, c]);
       setConversation(c.id);
+      selectedId.current = c.id;
       setMessages([]);
       setQueue([]);
+      setText('');
+      setShowArchived(false);
+      setConversationMenu('');
       setSidebar(false);
     } catch (e) {
       setError((e as Error).message);
     }
   }
+  function clearSelected(id: string) {
+    if (conversation !== id) return;
+    setConversation('');
+    selectedId.current = '';
+    setMessages([]);
+    setQueue([]);
+    setText('');
+    pending.current = null;
+  }
+  async function archiveChat(chat: Conversation, archived: boolean) {
+    setManaging(true);
+    setConversationMenu('');
+    setError('');
+    try {
+      const updated = await api<Conversation>(`/conversations/${chat.id}`, 'PATCH', { archived });
+      setConversations((old) => old.map((c) => (c.id === chat.id ? updated : c)));
+      if (archived) clearSelected(chat.id);
+      else {
+        setShowArchived(false);
+        setConversation(chat.id);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setManaging(false);
+    }
+  }
+  async function deleteChat() {
+    if (!deleting || managing) return;
+    const chat = deleting;
+    setManaging(true);
+    setError('');
+    try {
+      await api(`/conversations/${chat.id}`, 'DELETE');
+      setConversations((old) => old.filter((c) => c.id !== chat.id));
+      clearSelected(chat.id);
+      deleteDialog.current?.close();
+      setDeleting(null);
+    } catch (e) {
+      setError((e as Error).message);
+      deleteDialog.current?.close();
+      setDeleting(null);
+    } finally {
+      setManaging(false);
+    }
+  }
+  const selectedChat = conversations.find((c) => c.id === conversation);
+  const archivedChat = !!selectedChat?.archived;
+  const listedChats = conversations.filter((c) => !!c.archived === showArchived);
   async function send(value = text) {
-    if (!value.trim() || busy) return;
+    if (!value.trim() || busy || archivedChat || managing) return;
     setBusy(true);
     setError('');
     const operation =
@@ -205,26 +291,107 @@ function App() {
           <Plus size={17} />
           Nova conversa<span>⌘ K</span>
         </button>
-        <div className="side-label">SUAS CONVERSAS</div>
-        <nav className="conversation-list">
-          {conversations
+        <div className="conversation-heading">
+          <span className="side-label">{showArchived ? 'ARQUIVADAS' : 'SUAS CONVERSAS'}</span>
+          <button
+            className="icon archive-toggle"
+            aria-label={showArchived ? 'Ver conversas ativas' : 'Ver conversas arquivadas'}
+            title={showArchived ? 'Conversas ativas' : 'Conversas arquivadas'}
+            aria-pressed={showArchived}
+            onClick={() => {
+              setShowArchived(!showArchived);
+              setConversationMenu('');
+            }}
+          >
+            {showArchived ? <MessageSquare size={16} /> : <Archive size={16} />}
+          </button>
+        </div>
+        <nav
+          className="conversation-list"
+          aria-label={showArchived ? 'Conversas arquivadas' : 'Conversas ativas'}
+          ref={menuRoot}
+        >
+          {listedChats
             .slice()
             .reverse()
             .map((c) => (
-              <button
+              <div
                 key={c.id}
-                className={conversation === c.id ? 'selected' : ''}
-                onClick={() => {
-                  setConversation(c.id);
-                  setSidebar(false);
-                }}
+                className={`conversation-row${conversation === c.id ? ' selected' : ''}`}
               >
-                <MessageSquare size={15} />
-                <span>{c.title}</span>
-              </button>
+                <button
+                  className="conversation-open"
+                  aria-current={conversation === c.id ? 'page' : undefined}
+                  onClick={() => {
+                    setConversation(c.id);
+                    selectedId.current = c.id;
+                    setConversationMenu('');
+                    setSidebar(false);
+                  }}
+                >
+                  <MessageSquare size={15} />
+                  <span>{c.title}</span>
+                </button>
+                <button
+                  className="conversation-more"
+                  aria-label={`Opções de ${c.title}`}
+                  aria-haspopup="menu"
+                  aria-expanded={conversationMenu === c.id}
+                  disabled={busy || managing}
+                  onClick={() => setConversationMenu(conversationMenu === c.id ? '' : c.id)}
+                >
+                  <MoreHorizontal size={18} />
+                </button>
+                {conversationMenu === c.id && (
+                  <div
+                    className="conversation-menu"
+                    role="menu"
+                    aria-label={`Ações de ${c.title}`}
+                    onKeyDown={(event) => {
+                      const buttons = [...event.currentTarget.querySelectorAll('button')];
+                      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                        event.preventDefault();
+                        const next =
+                          event.key === 'Home'
+                            ? 0
+                            : event.key === 'End'
+                              ? buttons.length - 1
+                              : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) %
+                                buttons.length;
+                        buttons[next]?.focus();
+                      } else if (event.key === 'Escape') {
+                        event.stopPropagation();
+                        setConversationMenu('');
+                        event.currentTarget
+                          .closest('.conversation-row')
+                          ?.querySelector<HTMLButtonElement>('.conversation-more')
+                          ?.focus();
+                      }
+                    }}
+                  >
+                    <button role="menuitem" onClick={() => archiveChat(c, !c.archived)}>
+                      {c.archived ? <ArchiveRestore size={15} /> : <Archive size={15} />}
+                      {c.archived ? 'Restaurar conversa' : 'Arquivar conversa'}
+                    </button>
+                    <button
+                      role="menuitem"
+                      className="delete-action"
+                      onClick={() => {
+                        setConversationMenu('');
+                        setDeleting(c);
+                      }}
+                    >
+                      <Trash2 size={15} /> Excluir conversa
+                    </button>
+                  </div>
+                )}
+              </div>
             ))}
-          {!conversations.length && (
-            <p className="muted small">Seus pedidos ficam guardados aqui.</p>
+          {!listedChats.length && (
+            <p className="muted small">
+              {showArchived ? 'Nenhuma conversa arquivada.' : 'Seus pedidos ficam guardados aqui.'}
+            </p>
           )}
         </nav>
         <div className="sidebar-bottom">
@@ -387,6 +554,7 @@ function App() {
               ))}
               <button
                 className="inline-action"
+                disabled={archivedChat || busy}
                 onClick={() => send('Comece a fila com minhas preferências.')}
               >
                 Começar a fila
@@ -418,6 +586,18 @@ function App() {
               </button>
             </div>
           )}
+          {archivedChat && selectedChat && (
+            <div className="archived-notice" role="status">
+              <span>Esta conversa está arquivada.</span>
+              <button
+                type="button"
+                disabled={managing}
+                onClick={() => archiveChat(selectedChat, false)}
+              >
+                Restaurar conversa
+              </button>
+            </div>
+          )}
           <form
             className="composer"
             onSubmit={(e) => {
@@ -431,6 +611,7 @@ function App() {
               onChange={(e) => setText(e.target.value)}
               placeholder="Cole um link ou peça o que você precisa…"
               rows={2}
+              disabled={archivedChat || managing}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -448,7 +629,7 @@ function App() {
                 <button
                   aria-label="Enviar mensagem"
                   className="send"
-                  disabled={busy || !text.trim()}
+                  disabled={busy || !text.trim() || archivedChat || managing}
                 >
                   {busy ? <LoaderCircle className="spin" size={19} /> : <ArrowUp size={20} />}
                 </button>
@@ -470,6 +651,32 @@ function App() {
           refresh={refresh}
         />
       )}
+      <dialog
+        ref={deleteDialog}
+        className="delete-dialog"
+        aria-labelledby="delete-chat-title"
+        aria-describedby="delete-chat-description"
+        onCancel={(event) => {
+          if (managing) event.preventDefault();
+          else setDeleting(null);
+        }}
+        onClose={() => setDeleting(null)}
+      >
+        <h2 id="delete-chat-title">Excluir conversa?</h2>
+        <p className="delete-chat-name">{deleting?.title}</p>
+        <p id="delete-chat-description">
+          As mensagens e a fila desta conversa serão excluídas permanentemente. Arquivos
+          transferidos e o histórico de tarefas serão preservados.
+        </p>
+        <div className="delete-dialog-actions">
+          <button disabled={managing} onClick={() => deleteDialog.current?.close()}>
+            Cancelar
+          </button>
+          <button className="delete-confirm" disabled={managing} onClick={deleteChat}>
+            {managing ? 'Excluindo…' : 'Excluir permanentemente'}
+          </button>
+        </div>
+      </dialog>
     </div>
   );
 }

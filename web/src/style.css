@@ -109,27 +109,154 @@ a {
   overflow: auto;
   flex: 1;
 }
-.conversation-list button {
+.conversation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 22px 4px 10px 10px;
+}
+.conversation-heading .side-label {
+  margin: 0;
+}
+.conversation-heading .archive-toggle {
+  border-radius: 6px;
+}
+.archive-toggle[aria-pressed='true'] {
+  background: #e0e9e0;
+  color: var(--green);
+}
+.conversation-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  margin-bottom: 3px;
+}
+.conversation-row.selected,
+.conversation-row:hover {
+  background: #e0e9e0;
+  color: #28573c;
+}
+.conversation-list .conversation-open {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 11px;
   background: none;
   border: 0;
   border-radius: 8px;
   text-align: left;
   font-size: 12px;
-  margin-bottom: 3px;
 }
-.conversation-list button span {
+.conversation-open svg {
+  flex-shrink: 0;
+}
+.conversation-open span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.conversation-list button.selected {
-  background: #e0e9e0;
-  color: #28573c;
+.conversation-more {
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7e70;
+}
+.conversation-more:hover {
+  background: #d3e1d5;
+}
+.conversation-menu {
+  position: relative;
+  flex-basis: 100%;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 12px #17332312;
+  margin: 0 4px 6px;
+}
+.conversation-row:has(.conversation-menu) {
+  flex-wrap: wrap;
+}
+.conversation-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  text-align: left;
+  font-size: 12px;
+}
+.conversation-menu button:hover {
+  background: #f0f4f0;
+}
+.conversation-menu .delete-action {
+  color: #a23b38;
+}
+.archived-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 0;
+  font-size: 12px;
+  color: #67786c;
+}
+.archived-notice button {
+  border: 0;
+  background: transparent;
+  color: var(--green);
+  font-weight: 600;
+}
+.delete-dialog {
+  width: min(440px, calc(100vw - 36px));
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  color: #263e34;
+  box-shadow: 0 24px 80px #0d291e30;
+}
+.delete-dialog::backdrop {
+  background: #17332370;
+}
+.delete-dialog h2 {
+  margin: 0 0 15px;
+  font-size: 20px;
+}
+.delete-dialog p {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.delete-chat-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.delete-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+.delete-dialog-actions button {
+  padding: 10px 13px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+}
+.delete-dialog-actions .delete-confirm {
+  border-color: #a23b38;
+  background: #a23b38;
+  color: #fff;
 }
 .sidebar-bottom {
   margin-top: auto;

@@ -67,6 +67,10 @@ class MessageInput(Model):
     request_id: str = Field(min_length=8, max_length=100)
 
 
+class ConversationUpdate(Model):
+    archived: StrictBool
+
+
 class SetupInput(Model):
     kind: Literal["google", "mega", "model"]
     values: dict[str, str] = Field(default_factory=dict)

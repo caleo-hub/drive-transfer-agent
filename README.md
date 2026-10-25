@@ -11,6 +11,7 @@ Built with Google ADK, OpenAI, FastAPI, React and rclone. Developed on Ubuntu; d
 ## O que está incluído
 
 - Chat em português, ferramentas ADK e preferências persistentes.
+- Menu por conversa para arquivar, restaurar e excluir, com confirmação antes da exclusão.
 - Arquivos individuais e pastas do Google Drive → PC ou MEGA; nenhuma exclusão na origem.
 - Instalação oficial do rclone com SHA-256, conexão Google OAuth e formulário protegido MEGA.
 - Destinos favoritos, consulta de espaço e preparação antes da cópia.
@@ -91,6 +92,7 @@ Dados operacionais ficam em `jobs.sqlite3`, sessões ADK em `sessions.sqlite3`, 
 ## Comportamento e limites
 
 - Uma operação longa por executor. Fechar a aba não para a transferência; encerrar o aplicativo interrompe o trabalho.
+- Conversas arquivadas ficam na lista de arquivadas e podem ser restauradas para continuar. Excluir remove mensagens, fila preparada e sessão do agente, preservando arquivos e histórico de tarefas. Uma conversa com tarefa ativa só pode ser excluída depois de concluir ou cancelar a tarefa.
 - Reinício reconcilia tarefas como interrompidas. Nova tentativa é uma nova operação; não prometemos retomada parcial de cada arquivo.
 - Arquivos diferentes podem ser substituídos. Extras no destino e originais na origem são preservados.
 - Auditoria de MEGA é por tamanho. A interface mostra o alcance; isso não comprova igualdade byte a byte.

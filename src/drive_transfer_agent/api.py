@@ -16,7 +16,16 @@ from .agent import Chat
 from .config import Settings
 from .connections import Connections
 from .executor import Executor
-from .models import DestinationInput, ItemInput, JobInput, MessageInput, Preferences, QueueAction, SetupInput
+from .models import (
+    ConversationUpdate,
+    DestinationInput,
+    ItemInput,
+    JobInput,
+    MessageInput,
+    Preferences,
+    QueueAction,
+    SetupInput,
+)
 from .queue import Queues
 from .rclone import Rclone
 from .safety import DomainError, local_path, redact, relative_path
@@ -325,15 +334,24 @@ def create_app(settings=None, *, vault=None, rclone=None, connections=None):
         )
 
     @app.get("/api/conversations")
-    async def conversations():
-        return store.list("conversation")
+    async def conversations(archived: bool = False):
+        return [c for c in store.list("conversation") if c.get("archived", False) == archived]
 
     @app.post("/api/conversations")
     async def new_conversation():
         return chat.create()
 
+    @app.patch("/api/conversations/{conversation_id}")
+    async def update_conversation(conversation_id: str, value: ConversationUpdate):
+        return await chat.archive(conversation_id, value.archived)
+
+    @app.delete("/api/conversations/{conversation_id}")
+    async def delete_conversation(conversation_id: str):
+        return await chat.delete(conversation_id)
+
     @app.get("/api/conversations/{conversation_id}/messages")
     async def messages(conversation_id: str):
+        chat.conversation(conversation_id)
         return store.messages(conversation_id)
 
     @app.post("/api/conversations/{conversation_id}/messages")
@@ -342,10 +360,12 @@ def create_app(settings=None, *, vault=None, rclone=None, connections=None):
 
     @app.get("/api/conversations/{conversation_id}/queue")
     async def queue(conversation_id: str):
+        chat.conversation(conversation_id)
         return redact(queues.get(conversation_id))
 
     @app.post("/api/conversations/{conversation_id}/queue")
     async def change_queue(conversation_id: str, value: QueueAction):
+        chat.conversation(conversation_id, editable=True)
         for item in value.items:
             if item.drive_url:
                 item.source_ref = executor.register_source(item.drive_url)["source_ref"]
@@ -354,6 +374,7 @@ def create_app(settings=None, *, vault=None, rclone=None, connections=None):
 
     @app.post("/api/conversations/{conversation_id}/queue/import")
     async def import_queue(conversation_id: str, value: dict):
+        chat.conversation(conversation_id, editable=True)
         text = value.get("text", "")
         if not isinstance(text, str) or len(text) > 100000:
             raise DomainError("Lote inválido.")
