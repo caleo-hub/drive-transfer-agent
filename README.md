@@ -1,30 +1,83 @@
 # Drive Transfer Agent
 
-**Um assistente de arquivos feito para uma pessoa real.** Cole um link do Google Drive, peça uma cópia para o PC ou MEGA e acompanhe consulta, transferência e auditoria no chat.
+**I turned file transfers into a conversation.**
 
-Built with Google ADK, OpenAI, FastAPI, React and rclone. Developed on Ubuntu; designed to run locally on Windows. The language model plans operations through typed tools; a persistent executor performs and verifies the work.
+A local assistant that copies Google Drive files and folders to your PC or MEGA. Choose what to copy, review the destination, check available space, and track the work through chat.
 
-![Interface do Drive Transfer Agent](docs/images/overview.png)
+Built with **Google ADK · OpenAI · FastAPI · React · rclone**.
 
-[Vídeo demonstrativo da interface](docs/demo.mp4) — dados e progresso simulados, identificados no próprio vídeo. A demonstração não representa validação com contas reais.
+[Watch the 45-second demo](docs/linkedin-demo/drive-transfer-agent-linkedin.mp4) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Architecture](#architecture)
 
-## O que está incluído
+![Drive Transfer Agent desktop interface](docs/images/overview.png)
 
-- Chat em português, ferramentas ADK e preferências persistentes.
-- 27 ferramentas para descobrir pastas/IDs, buscar, medir, planejar, copiar e verificar: [catálogo completo e exemplos](docs/ferramentas-e-planejamento.md).
-- Seleção por nomes ou intervalos como “pastas 34 a 38”, com plano persistente, caminhos exatos e aprovação quando solicitada.
-- Menu por conversa para arquivar, restaurar e excluir, com confirmação antes da exclusão.
-- Arquivos individuais e pastas do Google Drive → PC ou MEGA; nenhuma exclusão na origem.
-- Instalação oficial do rclone com SHA-256, conexão Google OAuth e formulário protegido MEGA.
-- Destinos favoritos, consulta de espaço e preparação antes da cópia.
-- Fila de até 100 itens com nomes, reordenação, remoção e desfazer.
-- Consulta, cópia, verificação, reparo limitado, cancelamento e eventos de progresso.
-- SQLite, idempotência e identificação de tarefas interrompidas após reinício.
-- Credenciais criptografadas com chave no armazenamento seguro do sistema; não passam pelo modelo.
+> **Demo:** the [English promotional video](docs/linkedin-demo/drive-transfer-agent-linkedin.mp4) uses fictional data, simulated responses and accelerated progress. Its recording layer translates the interface into English; the application's default interface and agent instructions are in Portuguese. The demo is not evidence of a real cloud transfer.
 
-## Desenvolvimento no Ubuntu
+## Why I built it
 
-Requisitos: Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 22+ e npm.
+Moving a few selected folders between services can involve a lot of repetitive work: finding the right sources, choosing exact destination paths, checking space, copying, and verifying the result.
+
+I built Drive Transfer Agent to bring that workflow into a conversation while keeping execution in a dedicated, persistent file-transfer engine. The model interprets the request and calls typed tools. The backend validates the scope and rclone performs the file operations.
+
+## How it works
+
+1. **Describe the task.** Paste a Google Drive link and specify the folders and destination.
+2. **Resolve the selection.** The agent discovers source IDs and selects exact names or numbered ranges, including folder `0`.
+3. **Prepare the copy.** A persistent plan records the selected sources, destination paths and options. You can request a size and space check before copying.
+4. **Review when requested.** Ask the agent to wait for your approval; the executor enforces that requirement. A direct copy request can proceed without an extra approval turn.
+5. **Follow the job.** Transfer status, progress, verification and reports remain available through the conversation.
+
+For example, in the application's default language:
+
+```text
+Use este link do Drive: <folder link>.
+Selecione somente as pastas 0 a 2 e prepare a cópia para /Demo no MEGA.
+Mostre os caminhos e aguarde minha aprovação antes de copiar.
+```
+
+Selected folders go directly to `/Demo/<folder name>`; the parent folder is not added as another layer. A later request can reuse the conversation's destination.
+
+## What it can do
+
+| Capability | Behavior |
+| --- | --- |
+| Drive → PC or MEGA | Copy individual files or selected folders without deleting the source |
+| Source discovery | Browse children, search names, resolve IDs, select exact names or numbered ranges |
+| Persistent planning | Keep the selection, destination and intent associated with a conversation |
+| Preflight checks | Inspect file counts, sizes, destination capacity and temporary staging needs |
+| Transfer queue | Prepare up to 100 items; rename, reorder, remove and undo queue changes |
+| Progress and reports | Follow copy, verification, bounded repair, cancellation and final status |
+| Conversation history | Archive, restore or delete conversations with deletion confirmation |
+| Protected setup | Configure Google OAuth, MEGA and the model through dedicated setup fields |
+| Google document exports | Export supported Docs, Sheets and Slides as DOCX, XLSX and PPTX |
+
+The agent has **27 domain tools** for these operations. See the [tool catalog and planning examples](docs/ferramentas-e-planejamento.md) (Portuguese).
+
+**Verification scope matters:** MEGA verification compares file sizes. Matching sizes do **not** prove byte-for-byte equality. The application reports the verification coverage instead of treating all checks as equivalent.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    UI[React chat] --> API[Local FastAPI API]
+    API --> Agent[Google ADK agent]
+    Agent --> Model[OpenAI via LiteLLM]
+    Agent --> Tools[Typed domain tools]
+    Tools --> Planner[Planner and scope validation]
+    Planner --> Executor[Persistent executor]
+    Executor --> Rclone[rclone subprocesses]
+    Rclone --> Drive[Google Drive]
+    Rclone --> Target[PC or MEGA]
+    Executor --> DB[(SQLite jobs)]
+    Executor -->|Server-sent events| UI
+```
+
+The model receives tool results and operational context; it has no arbitrary shell tool. The executor validates the selected sources and saved plan, enforces requested approval, serializes long-running work, and records job state independently of the model session.
+
+Job creation is idempotent. After an application restart, unfinished jobs are marked interrupted; retrying creates a new operation. A chat session is not a checkpoint for an in-flight rclone process.
+
+## Quick start
+
+**Requirements:** Python 3.12+, [uv](https://docs.astral.sh/uv/), Node.js 22+ and npm. This is a source installation, not a standalone desktop executable.
 
 ```bash
 git clone https://github.com/caleo-hub/drive-transfer-agent.git
@@ -37,90 +90,103 @@ cd ..
 uv run drive-transfer-agent --no-browser
 ```
 
-Abra `http://127.0.0.1:8765`. Para desenvolvimento com hot reload, execute `npm run dev` em `web/`; o Vite encaminha `/api` para o backend local.
+Open **http://127.0.0.1:8765**.
 
-O Ubuntu é o workspace de desenvolvimento. Quando o aplicativo roda no Windows, os caminhos e as transferências pertencem ao Windows. Não existe ponte de controle remoto entre as duas máquinas.
+On Windows, after installing the requirements, you can instead run `instalar.ps1` once and use `iniciar.bat` to launch the application. Development began on Ubuntu; Windows uses its own local paths and processes. The application runs on the computer where it is launched.
 
-### Ambiente sem armazenamento seguro
+### Connect your services
 
-No desktop Windows, o keyring usa o Gerenciador de Credenciais. No Ubuntu com interface gráfica, use Secret Service. Em SSH/CI sem keyring, forneça `DTA_MASTER_KEY` pelo seu gerenciador de segredos; uma chave pode ser gerada com:
+Use the **Configuração** setup panel:
 
-```bash
-uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+1. **Aplicativo:** install rclone using the managed installer, which verifies its SHA-256 checksum.
+2. **OpenAI:** enter your API key in the protected field.
+3. **Google Drive:** configure your OAuth client and authorize Drive access.
+4. **MEGA:** connect the account if you want cloud destinations.
+5. **Destinos / Preferências:** register a destination and choose defaults.
+
+Model API usage and cloud-provider quotas depend on your accounts. Setup cards work before the model is configured.
+
+### Google OAuth setup
+
+Create a Google Cloud project, enable the **Google Drive API**, configure the consent screen, and create an OAuth client for a **desktop application**. While the OAuth app is in testing, add the authorized account as a test user.
+
+Enter `GOOGLE_CLIENT_ID` and, when provided by Google, `GOOGLE_CLIENT_SECRET` in the protected Google Drive setup fields or environment. For web clients, authorize exactly:
+
+```text
+http://127.0.0.1:8765/api/setup/oauth/callback
 ```
 
-Não versione nem perca essa chave. O aplicativo não cria um fallback em texto puro.
+The flow uses PKCE and the `drive.readonly` scope. Authorization happens on Google's sign-in page. Testing-mode tokens may expire; reconnect through the setup panel when needed.
 
-## Uso no Windows
+### Configuration
 
-Instale Python 3.12+, uv e Node 22 para a instalação a partir do código. Clone o repositório e execute `instalar.ps1` uma vez. Depois use `iniciar.bat` para abrir o aplicativo. A instalação do rclone e a conexão das contas são feitas nos cartões de Configuração.
+See [.env.example](.env.example). Protected setup fields are available for credentials; environment values take precedence.
 
-1. Instale o rclone pelo cartão **Aplicativo**.
-2. Informe sua chave OpenAI no cartão **OpenAI**.
-3. Conecte Google Drive e, se desejado, MEGA.
-4. Cadastre um destino e selecione-o nas preferências.
-5. Envie um link ou um pedido como “adicione estas pastas à fila”.
+| Variable | Purpose |
+| --- | --- |
+| `AGENT_MODEL` | OpenAI model via LiteLLM; default `openai/gpt-5.4-mini` |
+| `OPENAI_API_KEY` | Optional environment alternative to the protected model setup field |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Your provisioned Google OAuth client |
+| `DTA_PORT` | Local port; default `8765` |
+| `DTA_DATA_DIR` | Private application data directory; defaults to the OS application-data location |
+| `RCLONE_BIN` | Explicit rclone executable; takes precedence over managed installation and PATH |
+| `DTA_MASTER_KEY` | Explicit vault-key alternative for environments without a system keyring |
 
-O instalador de desenvolvimento ainda exige os runtimes acima. Esta versão não é um executável autossuficiente.
+Operational data is stored in `jobs.sqlite3`, ADK sessions in `sessions.sqlite3`, and encrypted credentials in `secrets.enc`.
 
-## Provisionamento Google OAuth
+## Privacy and execution boundaries
 
-O dono da instalação cria um projeto Google Cloud, habilita **Google Drive API** e configura a tela de consentimento. Crie um cliente OAuth para **aplicativo de computador**; enquanto o projeto estiver em testes, cadastre o e-mail autorizado como usuário de teste.
+- The API listens on loopback and is designed for one user on one computer.
+- Credentials are encrypted with Fernet; the vault key is kept in the system keyring, including Windows Credential Manager.
+- Headless environments without a keyring must explicitly provide `DTA_MASTER_KEY` through a secret manager. There is no plaintext-key fallback.
+- Credentials entered in protected setup fields are kept out of model messages and tool arguments. **Chat text, file names, paths and summarized tool results may be sent to OpenAI** as part of the agent context.
+- rclone receives private backend configuration through its process environment and uses in-memory configuration. The global rclone configuration is not copied.
+- Domain tools do not expose destructive sync, source deletion, arbitrary shell commands or permission changes.
 
-Configure `GOOGLE_CLIENT_ID` e, quando fornecido pelo Google, `GOOGLE_CLIENT_SECRET` no ambiente ou nos campos protegidos do cartão Google Drive. Para clientes web, autorize exatamente `http://127.0.0.1:8765/api/setup/oauth/callback`. O fluxo usa PKCE e acesso `drive.readonly`; o usuário concede acesso na página oficial Google.
+Read [security and privacy](docs/security.md) for details (Portuguese). Do not commit your application data directory, databases, logs or credentials.
 
-Tokens de aplicativos em modo de teste podem expirar conforme a política Google. Reconecte pelo mesmo cartão. Uma falha de login não concede acesso a arquivos sem permissão.
+## Current limits
 
-## Configuração
+- **One long-running operation per executor.** Closing the browser tab does not stop the job; stopping the application interrupts it.
+- **No guaranteed partial-file resume.** A retry is a new operation and uses the files already present.
+- **Existing destination files can be overwritten if different.** Extra destination files and original source files are preserved.
+- **MEGA verification is size-based.** MEGA logins and quotas can also require user intervention. Separate subprocesses are used per stage; accounts requiring a fresh 2FA code at every login may need reauthorization between stages.
+- **Individual files may need local staging space.** The preflight accounts for this.
+- **Unknown sizes are reported.** An entirely empty visible source is flagged for attention rather than silently replicated.
+- **Drive shortcuts need the original link.** Unsupported Google document types receive an explicit error.
+- **Search has bounds:** recursive discovery is limited in depth, pages and results, and reports truncation.
+- Scheduling, transcription, destructive synchronization, multiple users and additional cloud providers are outside this version's scope.
 
-Consulte `.env.example`. Variáveis opcionais:
+## Development and validation
 
-| Variável | Função |
-|---|---|
-| `DTA_DATA_DIR` | Diretório privado do aplicativo; padrão do sistema operacional |
-| `DTA_PORT` | Porta local, padrão 8765 |
-| `AGENT_MODEL` | Modelo OpenAI via LiteLLM, padrão `openai/gpt-5.4-mini` |
-| `OPENAI_API_KEY` | Chave OpenAI opcional, alternativa ao cartão protegido |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Cliente OAuth provisionado pelo desenvolvedor |
-| `RCLONE_BIN` | Executável explicitamente escolhido; precede instalação gerenciada e PATH |
-| `DTA_MASTER_KEY` | Alternativa explícita ao keyring para desenvolvimento sem desktop |
-
-O agente usa [OpenAI pelo conector LiteLLM do ADK](https://adk.dev/agents/models/litellm/). Cadastre a chave em **Configuração → OpenAI** ou use `OPENAI_API_KEY` no ambiente/`.env` (o ambiente tem precedência). Ela fica no backend; o navegador não chama a API OpenAI diretamente. `AGENT_MODEL` aceita o nome puro ou o prefixo `openai/`. A configuração Google OAuth continua sendo necessária apenas para acessar o Drive.
-
-Ao atualizar de uma instalação Gemini, cadastre uma chave OpenAI nova e ajuste qualquer `AGENT_MODEL` antigo. Chaves legadas não são reaproveitadas nem enviadas à OpenAI.
-
-Dados operacionais ficam em `jobs.sqlite3`, sessões ADK em `sessions.sqlite3`, credenciais em `secrets.enc`. Backends e credenciais são injetados no ambiente privado dos subprocessos. O rclone usa configuração em memória (`--config` com valor vazio), impedindo que uma renovação de token grave um arquivo de credenciais em texto puro. Não copiamos a configuração global do rclone.
-
-## Comportamento e limites
-
-- Uma operação longa por executor. Fechar a aba não para a transferência; encerrar o aplicativo interrompe o trabalho.
-- Conversas arquivadas ficam na lista de arquivadas e podem ser restauradas para continuar. Excluir remove mensagens, fila preparada e sessão do agente, preservando arquivos e histórico de tarefas. Uma conversa com tarefa ativa só pode ser excluída depois de concluir ou cancelar a tarefa.
-- Reinício reconcilia tarefas como interrompidas. Nova tentativa é uma nova operação; não prometemos retomada parcial de cada arquivo.
-- Arquivos diferentes podem ser substituídos. Extras no destino e originais na origem são preservados.
-- Auditoria de MEGA é por tamanho. A interface mostra o alcance; isso não comprova igualdade byte a byte.
-- Arquivos individuais usam staging temporário para funcionar sem acesso à pasta pai; a preparação considera esse espaço.
-- Google Docs/Sheets/Slides são exportados para DOCX/XLSX/PPTX. Tamanhos desconhecidos são sinalizados.
-- Zero arquivos visíveis gera atenção; uma origem inteiramente vazia não é replicada automaticamente.
-- Atalhos do Drive devem ser substituídos pelo link do original. Documentos Google sem formato suportado geram mensagem específica.
-- O MEGA pode exigir novo código 2FA e limitar logins; reconecte quando solicitado. Evite testes repetidos de conexão durante uma tarefa.
-- A implementação atual do MEGA usa subprocessos separados por etapa. Contas que exigem um novo código 2FA em cada login podem precisar de nova autorização entre etapas; sessões MEGA persistentes ainda não são implementadas.
-- Vídeos seletivos, transcrição, agendamento, sincronização destrutiva e múltiplos usuários não integram esta versão.
-
-## Testes
+For frontend hot reload, run `npm run dev` in `web/` while the backend is running. Vite proxies `/api` to the local backend.
 
 ```bash
+# Backend
 uv run pytest -q
 uv run ruff check .
-cd web
+
+# Frontend (from web/)
 npm test
-npm run test:e2e
+npm run format:check
 npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
 
-A integração local usa rclone com diretórios temporários e não exige contas. Testes com Google/MEGA e a chave real do modelo são manuais e separados: veja [aceite](docs/acceptance.md). O CI executa testes em Ubuntu e Windows e compila a interface.
+Local integration tests exercise rclone against temporary directories without cloud accounts. CI runs the backend tests and frontend build on Ubuntu and Windows, with browser tests on Ubuntu. The Python package can be built with `uv build` after building the frontend.
 
-Veja [arquitetura](docs/architecture.md) e [segurança e privacidade](docs/security.md). O conteúdo demonstrativo usa dados fictícios. A condição de cada validação real deve ser registrada no aceite; testes sem credenciais não certificam login nem transferências em provedores.
+Mocked model tests and local file tests do not validate Google OAuth, MEGA login, provider quotas or real cloud transfers. The [validation record](docs/validation.md) and [manual acceptance checklist](docs/acceptance.md) distinguish these checks.
 
-## Licença
+## Demo and documentation
 
-MIT. Consulte [LICENSE](LICENSE).
+- [English demo video — 45 seconds](docs/linkedin-demo/drive-transfer-agent-linkedin.mp4)
+- [Demo cover](docs/linkedin-demo/capa.png) and [LinkedIn post](docs/linkedin-demo/postagem.md)
+- [Recording source and reproduction instructions](docs/linkedin-demo/README.md)
+- [Final video validation](docs/linkedin-demo/validation/REVIEW.md)
+- [Original interface demo](docs/demo.mp4) — preserved, with simulated data
+- [Architecture](docs/architecture.md), [tool catalog](docs/ferramentas-e-planejamento.md), [security](docs/security.md) and [acceptance checklist](docs/acceptance.md) — detailed documentation in Portuguese
+
+## License
+
+[MIT](LICENSE).

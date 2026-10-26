@@ -34,8 +34,8 @@ test('transfer plan: shows exact paths, separates preflight and approval, reject
     note: 'Mantém o nome de cada pasta selecionada.',
   };
   const actions: string[] = [];
-  await page.route(`**/api/conversations/${chat.id}/plan`, (route) =>
-    route.fulfill({ json: plan }),
+  await page.route(`**/api/conversations/${chat.id}/messages`, (route) =>
+    route.fulfill({ json: [{ id: 'plan-message', role: 'assistant', text: '', plan }] }),
   );
   await page.route(`**/api/conversations/${chat.id}/plans/test-plan/*`, (route) => {
     actions.push(route.request().url().split('/').pop()!);

@@ -1,4 +1,5 @@
 import json
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -24,6 +25,26 @@ NAMES = [
     "37 – Sistema Endócrino",
     "38 – Urgências - Trauma",
 ]
+
+
+async def test_zero_internal_plan_uses_previous_mega_destination(setup):
+    planner, executor, connections, parent = setup
+    old = await prepare_plan(setup)
+    connections.entries.append(
+        {"id": "folder_zero", "name": "0 - Comece por aqui", "mimeType": FOLDER, "parents": ["root"]}
+    )
+    executor.store.put("preferences", "default", {"destination_id": "local-default"})
+    planner.capture_intent("c", "agora baixe a pasta 0 no mesmo destino", [])
+    zero = executor.register_source("https://drive.google.com/drive/folders/folder_zero")["source_ref"]
+    plan = await planner.create("c", "", [zero])
+    assert plan["destination"]["id"] == old["destination"]["id"]
+    assert [i["source_id"] for i in plan["items"]] == ["folder_zero"]
+    assert not plan["requires_approval"]
+    executor.normalize(JobInput(**plan["spec"]))
+    executor.start = AsyncMock(return_value=({"id": "simulated", "status": "pending"}, True))
+    result = await planner.execute(plan["id"], "c")
+    assert result["job_id"] == "simulated"
+    assert executor.start.call_count == 1
 
 
 class DirectoryConnections:
@@ -326,6 +347,8 @@ async def test_plan_api_requires_human_approval_and_keeps_archived_readonly(setu
 
     executor.start = start
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as c:
+        history = (await c.get("/api/conversations/c/messages")).json()
+        assert not any("plan" in message for message in history)
         endpoint = f"/api/conversations/c/plans/{plan['id']}/execute"
         assert (await c.get("/api/conversations/c/plan")).json()["items"] == plan["items"]
         assert (await c.post(endpoint)).status_code == 403
@@ -394,3 +417,19 @@ async def test_old_conversation_and_bare_link_preserve_subset_without_auto_downl
     assert intent["range"] == [34, 38]
     assert intent["require_review"] and intent["parent_ref"] == parent
     assert not executor.store.jobs()
+
+
+async def test_new_folder_zero_replaces_previous_selection(setup):
+    planner, executor, connections, parent = setup
+    old = await prepare_plan(setup)
+    connections.entries.append(
+        {"id": "folder_zero", "name": "0 - Comece por aqui", "mimeType": FOLDER, "parents": ["root"]}
+    )
+    planner.capture_intent("c", "faça o plano para pasta 0 que falei", [])
+    selected = await planner.select("c", parent)
+    assert [e["id"] for e in selected["items"]] == ["folder_zero"]
+    new = await planner.create("c", old["destination"]["id"], selection_id=selected["id"])
+    assert len(new["items"]) == 1
+    assert planner.get(old["id"], "c")["items"] == old["items"]
+    with pytest.raises(DomainError):
+        planner.approve(old["id"], "c")

@@ -32,9 +32,18 @@ Nunca peça ao usuário IDs internos que list_source_children/select_source_fold
 Se faltar um número ou houver nomes repetidos, mostre o problema; nunca substitua pela pasta inteira.
 Uma pasta MEGA já existente pode não estar cadastrada: use list_mega_folders e resolve_mega_destination.
 Um link mega.nz/fm é navegação e não uma nova autenticação. Use a conexão existente.
-Antes de copiar, crie plan_transfer: confira as origens e cada caminho de destino.
+O planejamento é interno: valide seleção e destino sem mostrar cards ou IDs de plano.
+Para pedidos de cópia, use run_transfer: ele resolve a seleção formal automaticamente e executa quando autorizado.
+Omita destination_id para reutilizar o destino explícito da conversa, que tem prioridade sobre preferências globais.
+Não encerre o turno oferecendo tentar de novo: corrija argumentos recuperáveis com as ferramentas.
+Só peça aprovação se o usuário pediu explicitamente revisão antes da cópia.
 Enviar as pastas selecionadas para /CURSO significa /CURSO/<nome de cada pasta>, sem incluir a pasta-pai.
-Se pedirem plano primeiro, apresente o plano e aguarde aprovação. Não execute no mesmo turno.
+Se pedirem somente um plano, prepare internamente e resuma o destino, sem iniciar cópia.
+Use select_source_folders antes de plan_transfer, inclusive para uma única pasta e para a pasta zero.
+Corrija erros de argumentos no mesmo turno, sem pedir autorização para corrigir o preparo.
+Pesquise nomes aproximados na pasta-pai conhecida. Não peça ao usuário IDs internos.
+Só diga que o preparo está pronto após plan_transfer retornar sucesso. Em pedido direto de download, execute no mesmo turno.
+Consulte task_status antes de relatar estado de execução. MEGA tem auditoria por tamanho, nunca diga hash sem evidência.
 Quando um plano existente estiver aprovado, use execute_transfer_plan com seu ID, sem recriar outro.
 Use current_plan para retomar pedidos. O backend bloqueia mudanças de seleção/destino após o plano.
 Conexões marcadas como configuradas no contexto devem ser usadas; só solicite reconexão após falha real.
@@ -351,7 +360,7 @@ class Chat:
                 if mode != "inspect":
                     plan = await self.planner.create(
                         conversation,
-                        spec.destination_id,
+                        destination_id,
                         [i.source_ref for i in items],
                         names=[i.folder_label for i in items] if all(i.folder_label for i in items) else [],
                         mode=mode,
@@ -485,7 +494,7 @@ class Chat:
             for url in re.findall(r"https?://(?:www\.)?drive\.google\.com/[^\s<>]+", text):
                 sources.append(self.executor.register_source(url.rstrip(".,;)")))
             # Backfill existing conversations so a correction such as "só 34 a 38" survives upgrades.
-            if self.store.get("intent", conversation) is None:
+            if self.store.get("intent", conversation, {}).get("schema_version") != 3:
                 known = self.store.list("source")
                 for message in self.store.messages(conversation):
                     if message["role"] != "user":
@@ -508,6 +517,8 @@ class Chat:
                             pass
                     self.planner.capture_intent(conversation, message["text"], old_sources)
             intent = self.planner.capture_intent(conversation, text, sources)
+            intent["schema_version"] = 3
+            self.store.put("intent", conversation, intent)
             safe_text = text
             for source in sources:
                 raw = self.store.get("source", source["source_ref"])["url"]

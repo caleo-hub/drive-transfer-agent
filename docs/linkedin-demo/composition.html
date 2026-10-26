@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Drive Transfer Agent · LinkedIn Demo</title>
+<style>
+*{box-sizing:border-box}body{margin:0;width:1080px;height:1350px;overflow:hidden;background:#f2f6f0;color:#263e34;font-family:Arial,sans-serif}
+.glow{position:absolute;inset:0;background:radial-gradient(ellipse at 95% 8%,#dcebdc 0,transparent 50%),radial-gradient(ellipse at 0 100%,#e2ecdf 0,transparent 50%)}
+.brand{position:absolute;left:62px;top:62px;display:flex;gap:17px;align-items:center;font-size:28px;font-weight:700;letter-spacing:-.8px}.mark{background:#226749;color:#fff;border-radius:15px;width:50px;height:50px;display:grid;place-items:center;font-size:32px;font-weight:400}
+.badge{position:absolute;right:62px;top:71px;background:#fff7df;color:#735619;border:1px solid #d9c891;border-radius:30px;padding:12px 18px;font-size:21px;font-weight:600}
+.intro{position:absolute;left:62px;top:168px;width:956px}.kicker{font-size:21px;letter-spacing:2.7px;font-weight:700;color:#568162;text-transform:uppercase;margin-bottom:24px}h1{font-size:64px;line-height:1.07;letter-spacing:-2.8px;margin:0;font-weight:700;max-width:950px}h1 em{font-style:normal;color:#226749}
+.visual{position:absolute;left:62px;top:390px;width:956px;height:748px;display:flex;align-items:center;justify-content:center;isolation:isolate}
+.window{position:relative;max-width:956px;border:1px solid #cbdacb;border-radius:24px;background:#fff;box-shadow:0 20px 45px #274d3312;overflow:hidden;transform-origin:center center}.chrome{height:42px;display:flex;align-items:center;gap:7px;background:#eef3ec;padding:0 18px;border-bottom:1px solid #dce6dc;color:#65816b;font-size:16px}.dot{height:8px;width:8px;background:#b2c4b2;border-radius:50%}.chrome span{margin-left:12px}.window img{display:block;width:100%;height:auto}
+.caption{position:absolute;left:65px;top:1173px;width:950px;font-size:29px;line-height:1.35;color:#496950}.caption strong{color:#226749}.foot{position:absolute;left:62px;bottom:46px;right:62px;display:flex;justify-content:space-between;align-items:center;font-size:18px;color:#627969}.rail{position:absolute;left:62px;bottom:22px;height:4px;width:956px;background:#d7e3d5;border-radius:3px}.rail b{display:block;height:4px;background:#226749;border-radius:3px}
+.route{display:none;position:absolute;left:62px;top:430px;right:62px;gap:24px;align-items:center}.route .tile{border:1px solid #cadac8;border-radius:22px;background:#ffffffb8;padding:25px 32px;font-size:34px;font-weight:600}.route .arrow{font-size:46px;color:#6a8d72}
+.cta{display:none;position:absolute;left:62px;top:1020px;width:920px;font-size:47px;line-height:1.12;letter-spacing:-1.2px;font-weight:700;color:#226749}
+.crop{overflow:hidden;position:relative}.pointer{display:none;position:absolute;left:54%;top:66%;width:32px;height:32px;border:4px solid white;background:#226749bb;box-shadow:0 0 0 5px #22674945;border-radius:50%;z-index:2}
+.final h1{font-size:69px}.final .intro{top:150px}.final .route{display:flex}.final .visual{top:565px;height:395px}.final .cta{display:block}.final .caption{display:none}
+</style>
+<div class="glow"></div><div class="brand"><div class="mark">⇄</div>Drive Transfer Agent</div><div class="badge">Demo with simulated data</div>
+<div class="intro"><div class="kicker" id="kicker"></div><h1 id="title"></h1></div>
+<div class="route"><div class="tile">Google Drive</div><div class="arrow">→</div><div class="tile">PC or MEGA</div></div>
+<div class="visual"><div class="window" id="window"><div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>Actual interface · demo environment</span></div><div class="crop" id="crop"><img id="shot"></div><div class="pointer" id="pointer"></div></div></div>
+<div class="caption" id="caption"></div><div class="cta">What would you automate<br>with an assistant like this?</div>
+<div class="foot"><span>MY PROJECT IN ACTION</span><span id="step"></span></div><div class="rail"><b id="progress"></b></div>
+<script>
+window.render = async ({image,width,title,kicker,caption,step,time,local,final,crop,pan,click}) => {
+ document.body.classList.toggle('final',!!final);
+ document.getElementById('title').innerHTML=title;
+ document.getElementById('kicker').textContent=kicker;
+ document.getElementById('caption').innerHTML=caption;
+ document.getElementById('step').textContent=step;
+ document.getElementById('progress').style.width=(time/45*100)+'%';
+ const shot=document.getElementById('shot');if(shot.getAttribute('src')!==image){shot.src=image;await shot.decode()}
+ const win=document.getElementById('window');win.style.width=width+'px';
+ document.getElementById('crop').style.height=crop?crop+'px':'auto';
+ const excess=Math.max(0,shot.naturalHeight/shot.naturalWidth*width-(crop||10000));
+ shot.style.transform=`translateY(${-excess*(pan||0)}px)`;
+ const pointer=document.getElementById('pointer');pointer.style.display=click&&local>.45?'block':'none';
+ pointer.style.transform=`scale(${local>1.05&&local<1.35?.75:1})`;
+ const ease=.5-Math.cos(Math.PI*Math.min(local/3,1))/2;
+ win.style.transform=`translateY(${(1-ease)*9}px) scale(${.985+.015*ease})`;
+};
+</script>
+</html>

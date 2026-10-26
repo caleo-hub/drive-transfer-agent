@@ -39,6 +39,8 @@ type Message = {
   actions?: { type: string; provider: string }[];
   job_ids?: string[];
   job_id?: string;
+  plan?: TransferPlan;
+  task_id?: string;
   status?: string;
 };
 type Conversation = { id: string; title: string; archived?: boolean };
@@ -89,7 +91,7 @@ function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [queue, setQueue] = useState<any[]>([]);
-  const [plan, setPlan] = useState<TransferPlan | null>(null);
+
   const [health, setHealth] = useState<any>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -121,15 +123,13 @@ function App() {
     setHealth(h);
   }
   async function load(id: string) {
-    const [ms, q, p] = await Promise.all([
+    const [ms, q] = await Promise.all([
       api(`/conversations/${id}/messages`),
       api(`/conversations/${id}/queue`),
-      api(`/conversations/${id}/plan`),
     ]);
     if (selectedId.current !== id) return;
     setMessages(ms);
     setQueue(q.items);
-    setPlan(p);
   }
   useEffect(() => {
     refresh().catch((e) => setError(e.message));
@@ -197,7 +197,7 @@ function App() {
       selectedId.current = c.id;
       setMessages([]);
       setQueue([]);
-      setPlan(null);
+
       setText('');
       setShowArchived(false);
       setConversationMenu('');
@@ -212,7 +212,7 @@ function App() {
     selectedId.current = '';
     setMessages([]);
     setQueue([]);
-    setPlan(null);
+
     setText('');
     pending.current = null;
   }
@@ -256,7 +256,7 @@ function App() {
   const selectedChat = conversations.find((c) => c.id === conversation);
   const archivedChat = !!selectedChat?.archived;
   const listedChats = conversations.filter((c) => !!c.archived === showArchived);
-  async function executePlan(action: 'execute' | 'preflight' = 'execute') {
+  async function executePlan(plan: TransferPlan, action: 'execute' | 'preflight' = 'execute') {
     if (!plan || busy || archivedChat) return;
     setBusy(true);
     setError('');
@@ -268,6 +268,56 @@ function App() {
     } finally {
       setBusy(false);
     }
+  }
+  function renderPlan(plan: TransferPlan) {
+    return (
+      <section className="transfer-plan" aria-label="Plano de transferência">
+        <div className="plan-heading">
+          <FileText size={18} />
+          <strong>Plano de transferência · {plan.items.length} origens</strong>
+        </div>
+        <p>
+          Destino: <strong>{plan.destination.name}</strong>
+        </p>
+        <ol className="plan-origins">
+          {plan.items.map((item) => (
+            <li key={item.source_id}>
+              <strong>{item.name}</strong>
+              <span>{item.target}</span>
+            </li>
+          ))}
+        </ol>
+        <p className="small muted">{plan.note}</p>
+        <details>
+          <summary>Etapas planejadas</summary>
+          <ol>
+            {plan.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </details>
+        {plan.stale ? (
+          <p role="status">O pedido mudou. Prepare um novo plano antes de iniciar.</p>
+        ) : plan.status === 'ready' ? (
+          <div className="plan-actions">
+            <button disabled={busy || archivedChat} onClick={() => executePlan(plan, 'preflight')}>
+              Consultar tamanho e espaço
+            </button>
+            <button
+              className="primary"
+              disabled={busy || archivedChat}
+              onClick={() => executePlan(plan)}
+            >
+              {plan.requires_approval && !plan.approved
+                ? 'Aprovar plano e iniciar'
+                : 'Iniciar plano'}
+            </button>
+          </div>
+        ) : (
+          <p role="status">Plano enviado ao executor. Acompanhe o resultado na tarefa.</p>
+        )}
+      </section>
+    );
   }
   async function send(value = text) {
     if (!value.trim() || busy || archivedChat || managing) return;
@@ -297,7 +347,6 @@ function App() {
     }
   }
   const visibleJobs = jobs.filter((j) => j.spec.conversation_id === conversation);
-  const recentJob = visibleJobs[0];
   return (
     <div className="app-shell">
       <aside inert={!!setup} aria-hidden={!!setup} className={`sidebar ${sidebar ? 'shown' : ''}`}>
@@ -540,7 +589,22 @@ function App() {
                         ATUALIZAÇÃO DA TAREFA · {statusLabel[m.status || '']}
                       </div>
                     )}
-                    <div className="message-text">{m.text}</div>
+                    {m.text && <div className="message-text">{m.text}</div>}
+                    {m.plan && renderPlan(m.plan)}
+                    {m.task_id &&
+                      jobs
+                        .filter((j) => j.id === m.task_id)
+                        .map((job) => (
+                          <JobCard
+                            key={job.id}
+                            job={job}
+                            destination={destinations.find((d) => d.id === job.spec.destination_id)}
+                            onChange={() => {
+                              refresh();
+                              load(conversation);
+                            }}
+                          />
+                        ))}
                     {m.actions?.map((a, n) => (
                       <button
                         className="inline-action"
@@ -570,54 +634,6 @@ function App() {
               )}
             </section>
           )}
-          {plan && (
-            <section className="transfer-plan" aria-label="Plano de transferência">
-              <div className="plan-heading">
-                <FileText size={18} />
-                <strong>Plano de transferência · {plan.items.length} origens</strong>
-              </div>
-              <p>
-                Destino: <strong>{plan.destination.name}</strong>
-              </p>
-              <ol className="plan-origins">
-                {plan.items.map((item) => (
-                  <li key={item.source_id}>
-                    <strong>{item.name}</strong>
-                    <span>{item.target}</span>
-                  </li>
-                ))}
-              </ol>
-              <p className="small muted">{plan.note}</p>
-              <details>
-                <summary>Etapas planejadas</summary>
-                <ol>
-                  {plan.steps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-              </details>
-              {plan.stale ? (
-                <p role="status">O pedido mudou. Prepare um novo plano antes de iniciar.</p>
-              ) : plan.status === 'ready' ? (
-                <div className="plan-actions">
-                  <button disabled={busy || archivedChat} onClick={() => executePlan('preflight')}>
-                    Consultar tamanho e espaço
-                  </button>
-                  <button
-                    className="primary"
-                    disabled={busy || archivedChat}
-                    onClick={() => executePlan()}
-                  >
-                    {plan.requires_approval && !plan.approved
-                      ? 'Aprovar plano e iniciar'
-                      : 'Iniciar plano'}
-                  </button>
-                </div>
-              ) : (
-                <p role="status">Plano enviado ao executor. Acompanhe o resultado na tarefa.</p>
-              )}
-            </section>
-          )}
           {queue.length > 0 && (
             <div className="queue-preview">
               <strong>
@@ -638,18 +654,6 @@ function App() {
                 <ArrowUpRight size={14} />
               </button>
             </div>
-          )}
-          {recentJob && (
-            <JobCard
-              job={recentJob}
-              destination={destinations.find(
-                (destination) => destination.id === recentJob.spec.destination_id,
-              )}
-              onChange={() => {
-                refresh().catch(() => {});
-                load(conversation).catch(() => {});
-              }}
-            />
           )}
           <div ref={end} />
         </div>

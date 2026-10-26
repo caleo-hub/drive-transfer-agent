@@ -380,7 +380,19 @@ def create_app(settings=None, *, vault=None, rclone=None, connections=None):
     @app.get("/api/conversations/{conversation_id}/messages")
     async def messages(conversation_id: str):
         chat.conversation(conversation_id)
-        return store.messages(conversation_id)
+        messages = store.messages(conversation_id)
+        for job in store.jobs():
+            if job["spec"].get("conversation_id") == conversation_id:
+                messages.append(
+                    {
+                        "id": "job:" + job["id"],
+                        "role": "assistant",
+                        "text": "",
+                        "created_at": job.get("created_at", 0),
+                        "task_id": job["id"],
+                    }
+                )
+        return sorted(messages, key=lambda message: message.get("created_at", 0))
 
     @app.post("/api/conversations/{conversation_id}/messages")
     async def send_message(conversation_id: str, value: MessageInput):

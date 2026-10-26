@@ -135,10 +135,16 @@ class Planner:
                     .rstrip(".")
                 )
             intent.update(destination_kind="mega", destination_path=mega_path(path))
+        single = re.search(r"\bpasta\s+(\d+)\b", text, re.I)
+        if single and not RANGE.search(text):
+            number = int(single[1])
+            intent.update(range=[number, number], names=None, selection_required=True)
+            if before.get("range") != [number, number]:
+                intent["require_review"] = False
         found = RANGE.search(text)
         if found:
             start, end = map(int, found.groups())
-            if not 1 <= start <= end or end - start >= 100:
+            if not 0 <= start <= end or end - start >= 100:
                 raise DomainError("Use um intervalo crescente de até 100 pastas.")
             if intent.get("range") != [start, end]:
                 intent.pop("names", None)
@@ -156,7 +162,7 @@ class Planner:
             re.I,
         ):
             intent["selection_required"] = True
-        if re.search(r"(?:fa[çc]a|monte|prepare)\s+(?:um\s+)?plano|plano\s+primeiro|planeje", text, re.I):
+        if re.search(r"plano\s+primeiro|primeiro.*plano|aguarde.*aprova|antes.*aprova", text, re.I):
             intent["require_review"] = True
         if re.search(
             r"n[aã]o\s+(?:execute|inicie|copie|baixe)|sem\s+(?:copiar|iniciar|baixar)|(?:apenas|só)\s+(?:um\s+)?plano",
@@ -255,7 +261,7 @@ class Planner:
             normalized_name(n) for n in intent["names"]
         }:
             raise DomainError("Os nomes selecionados não correspondem ao pedido do usuário.")
-        if not names and not (1 <= start_number <= end_number and end_number - start_number < 100):
+        if not names and not (0 <= start_number <= end_number and end_number - start_number < 100):
             raise DomainError("Informe nomes exatos ou um intervalo crescente de até 100 pastas.")
         if intent.get("range") and [start_number, end_number] != intent["range"]:
             raise DomainError("O intervalo selecionado não corresponde ao pedido do usuário.")
@@ -371,6 +377,10 @@ class Planner:
     ):
         intent = self.store.get("intent", conversation, {"revision": 0})
         refs, names = source_refs or [], names or []
+        if intent.get("selection_required") and not intent.get("selection_id") and intent.get("parent_ref"):
+            selected = await self.select(conversation, intent["parent_ref"])
+            selection_id = selected["id"]
+            intent = self.store.get("intent", conversation)
         selection_id = selection_id or intent.get("selection_id", "")
         selection = self.store.get("selection", selection_id) if selection_id else None
         if selection:
@@ -384,6 +394,19 @@ class Planner:
         if names and len(names) != len(refs):
             raise DomainError("Informe um nome por origem ou omita todos.")
         prefs = Preferences(**self.store.get("preferences", "default", {}))
+        if not destination_id:
+            if intent.get("destination_path"):
+                matches = [
+                    d
+                    for d in self.store.list("destination")
+                    if d["kind"] == "mega" and d["path"] == intent["destination_path"]
+                ]
+                if matches:
+                    destination_id = matches[0]["id"]
+                else:
+                    destination_id = (await self.resolve_mega(intent["destination_path"]))["id"]
+            elif self.latest(conversation):
+                destination_id = self.latest(conversation)["destination"]["id"]
         dest = self.store.get("destination", destination_id or prefs.destination_id)
         if not dest:
             raise DomainError("Localize ou cadastre o destino exato antes de planejar.")

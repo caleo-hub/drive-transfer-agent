@@ -1,0 +1,5 @@
+# Generated recording intermediates; the recorder reproduces these locally.
+ui/
+validation/*.png
+validation/*.jpg
+validation/capture.json
